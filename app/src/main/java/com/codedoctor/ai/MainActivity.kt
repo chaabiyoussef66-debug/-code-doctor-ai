@@ -2,6 +2,8 @@ package com.codedoctor.ai
 
 import android.app.Activity
 import android.content.Intent
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -15,6 +17,7 @@ import org.json.JSONObject
 class MainActivity : ComponentActivity() {
     private lateinit var editor: EditText
     private lateinit var output: TextView
+    private lateinit var copyButton: Button
 
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -87,6 +90,16 @@ class MainActivity : ComponentActivity() {
         }
         page.addView(ScrollView(this).apply { addView(output) },
             LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = 8 })
+        copyButton = Button(this).apply {
+            text = "نسخ نتيجة الفحص"
+            isEnabled = false
+            setOnClickListener {
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("نتيجة فحص Code Doctor AI", output.text))
+                Toast.makeText(this@MainActivity, "تم نسخ نتيجة الفحص", Toast.LENGTH_SHORT).show()
+            }
+        }
+        page.addView(copyButton, wrap())
         page.addView(TextView(this).apply {
             text = "الفحص محلي — لا يتم رفع الكود إلى الإنترنت."
             gravity = Gravity.CENTER
@@ -97,6 +110,7 @@ class MainActivity : ComponentActivity() {
 
     private fun analyzeCode() {
         val source = editor.text.toString()
+        copyButton.isEnabled = false
         if (source.isBlank()) { output.text = "أدخل كوداً أولاً."; return }
         try {
             val raw = Python.getInstance().getModule("analyzer")
@@ -120,8 +134,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
             output.text = report.toString()
+            copyButton.isEnabled = true
         } catch (e: Exception) {
             output.text = "وقع خطأ أثناء التحليل:\n${e.message}"
+            copyButton.isEnabled = true
         }
     }
 

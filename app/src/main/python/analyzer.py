@@ -569,6 +569,15 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         if alias:
             self.assigned.discard(alias)
 
+    def visit_Import(self, node):
+        for alias in node.names:
+            self.assigned.add(alias.asname or alias.name.split(".")[0])
+
+    def visit_ImportFrom(self, node):
+        for alias in node.names:
+            if alias.name != "*":
+                self.assigned.add(alias.asname or alias.name)
+
     def visit_FunctionDef(self, node):
         for decorator in node.decorator_list:
             self.visit(decorator)

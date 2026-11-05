@@ -153,6 +153,11 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         source = "class Sample:\n    denominator = 0\n    def calculate(self, denominator):\n        return 10 / denominator"
         self.assertNotIn("قسمة على صفر", self.titles(source))
 
+    def test_class_constant_analysis_continues_after_method_definition(self):
+        source = "class Sample:\n    denominator = 0\n    def method(self):\n        return 1\n    result = 10 / denominator"
+        self.assertIn("قسمة على صفر", self.titles(source))
+
+
 
     def test_unhashable_set_literal_does_not_crash_analyzer(self):
         result = scan("value = {[]}")

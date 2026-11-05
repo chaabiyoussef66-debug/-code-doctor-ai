@@ -298,6 +298,136 @@ class Inspector(ast.NodeVisitor):
         self.generic_visit(node)
     visit_AsyncFunctionDef = visit_FunctionDef
 
+class LocalBindingCollector(ast.NodeVisitor):
+    """Collect bindings for one scope without entering nested lexical scopes."""
+    def __init__(self):
+        self.names = set()
+
+    def visit_Name(self, node):
+        if isinstance(node.ctx, (ast.Store, ast.Param)):
+            self.names.add(node.id)
+
+    def visit_FunctionDef(self, node):
+        self.names.add(node.name)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node):
+        self.names.add(node.name)
+
+    def visit_Lambda(self, node):
+        return
+
+    def visit_Import(self, node):
+        for alias in node.names:
+            self.names.add(alias.asname or alias.name.split(".")[0])
+
+    def visit_ImportFrom(self, node):
+        for alias in node.names:
+            if alias.name != "*":
+                self.names.add(alias.asname or alias.name)
+
+    def visit_ExceptHandler(self, node):
+        if node.name:
+            self.names.add(node.name)
+        for child in node.body:
+            self.visit(child)
+
+
+class ScopeNameVisitor(ast.NodeVisitor):
+    """Conservative undefined-name checks with separate function/class scopes."""
+    last_issues = []
+
+    def __init__(self, available, local_names=None, closure_names=None):
+        self.available = set(available)
+        self.local_names = set(local_names or ())
+        self.closure_names = set(closure_names or ())
+        self.issues = []
+
+    @staticmethod
+    def parameters(args):
+        result = set()
+        for arg in args.posonlyargs + args.args + args.kwonlyargs:
+            result.add(arg.arg)
+        if args.vararg:
+            result.add(args.vararg.arg)
+        if args.kwarg:
+            result.add(args.kwarg.arg)
+        return result
+
+    def visit_Name(self, node):
+        if not isinstance(node.ctx, ast.Load):
+            return
+        name = node.id
+        if name in self.available or name in self.local_names or name in self.closure_names:
+            return
+        self.issues.append(issue(
+            "ERROR", "اسم أو متغير غير معرّف", node,
+            "الاسم '" + name + "' غير معرّف في النطاق الظاهر؛ قد يسبب NameError.",
+            "عرّف الاسم قبل استعماله أو صحح كتابته أو أضف الاستيراد اللازم."
+        ))
+
+    def visit_FunctionDef(self, node):
+        # Defaults, decorators and annotations execute in the enclosing scope.
+        for item in node.decorator_list:
+            self.visit(item)
+        for item in node.args.defaults + node.args.kw_defaults:
+            if item is not None:
+                self.visit(item)
+        for arg in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
+            if arg.annotation:
+                self.visit(arg.annotation)
+        if node.args.vararg and node.args.vararg.annotation:
+            self.visit(node.args.vararg.annotation)
+        if node.args.kwarg and node.args.kwarg.annotation:
+            self.visit(node.args.kwarg.annotation)
+        if node.returns:
+            self.visit(node.returns)
+
+        collector = LocalBindingCollector()
+        for statement in node.body:
+            collector.visit(statement)
+        locals_for_function = collector.names | self.parameters(node.args)
+        child = ScopeNameVisitor(
+            self.available,
+            locals_for_function,
+            self.closure_names | self.local_names
+        )
+        for statement in node.body:
+            child.visit(statement)
+        self.issues.extend(child.issues)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_Lambda(self, node):
+        for item in node.args.defaults + node.args.kw_defaults:
+            if item is not None:
+                self.visit(item)
+        child = ScopeNameVisitor(
+            self.available,
+            self.parameters(node.args),
+            self.closure_names | self.local_names
+        )
+        child.visit(node.body)
+        self.issues.extend(child.issues)
+
+    def visit_ClassDef(self, node):
+        for item in node.decorator_list + node.bases:
+            self.visit(item)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        collector = LocalBindingCollector()
+        for statement in node.body:
+            collector.visit(statement)
+        child = ScopeNameVisitor(
+            self.available,
+            collector.names,
+            self.closure_names | self.local_names
+        )
+        for statement in node.body:
+            child.visit(statement)
+        self.issues.extend(child.issues)
+
 def analyze(source):
     issues = []
     for number, line in enumerate(source.splitlines(), 1):
@@ -320,20 +450,14 @@ def analyze(source):
     inspector.visit(tree)
     issues.extend(inspector.issues)
 
-    # A conservative module-level name pass. It flags only names absent from
-    # all visible module bindings and Python built-ins; function-local flow
-    # analysis is intentionally not guessed in this first AST iteration.
-    collector = BindingCollector()
-    collector.visit(tree)
-    module_names = collector.names | set(dir(builtins))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-            if node.id not in module_names:
-                # Ignore names used as annotations in postponed/type contexts only if bound;
-                # unresolved names remain useful diagnostics.
-                issues.append(issue("ERROR", "اسم أو متغير غير معرّف", node,
-                    "الاسم '" + node.id + "' غير معرّف في النطاق العام الظاهر؛ قد يسبب NameError.",
-                    "عرّف الاسم قبل استعماله أو صحح كتابته أو أضف الاستيراد اللازم."))
+    # Resolve names per lexical scope. A local variable in one function
+    # must never make the same name appear defined in another function.
+    module_collector = LocalBindingCollector()
+    module_collector.visit(tree)
+    module_names = module_collector.names | set(dir(builtins))
+    name_checker = ScopeNameVisitor(module_names, module_collector.names)
+    name_checker.visit(tree)
+    issues.extend(name_checker.issues)
 
     order = {"CRITICAL": 0, "ERROR": 1, "WARNING": 2, "INFO": 3}
     # Remove duplicate reports for the same NameError location.

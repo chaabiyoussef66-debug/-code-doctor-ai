@@ -61,16 +61,31 @@ class BindingCollector(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node):
         self.names.add(node.name)
+        args = node.args
+        for arg in args.posonlyargs + args.args + args.kwonlyargs:
+            self.names.add(arg.arg)
+        if args.vararg:
+            self.names.add(args.vararg.arg)
+        if args.kwarg:
+            self.names.add(args.kwarg.arg)
+        self.generic_visit(node)
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_ClassDef(self, node):
         self.names.add(node.name)
+        self.generic_visit(node)
 
     def visit_Lambda(self, node):
-        return
+        for arg in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
+            self.names.add(arg.arg)
+        if node.args.vararg:
+            self.names.add(node.args.vararg.arg)
+        if node.args.kwarg:
+            self.names.add(node.args.kwarg.arg)
+        self.generic_visit(node)
 
     def visit_ListComp(self, node):
-        return
+        self.generic_visit(node)
     visit_SetComp = visit_ListComp
     visit_DictComp = visit_ListComp
     visit_GeneratorExp = visit_ListComp
@@ -116,7 +131,11 @@ class Inspector(ast.NodeVisitor):
             bad = False
             if isinstance(node.op, ast.Add):
                 bad = not ((isinstance(left, (int, float, complex)) and not isinstance(left, bool) and isinstance(right, (int, float, complex)) and not isinstance(right, bool)) or (type(left) is type(right) and isinstance(left, (str, list, tuple))))
-            elif isinstance(node.op, (ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)):
+            elif isinstance(node.op, ast.Mult):
+                numeric_pair = (isinstance(left, (int, float, complex)) and not isinstance(left, bool) and isinstance(right, (int, float, complex)) and not isinstance(right, bool))
+                sequence_repeat = ((isinstance(left, (str, list, tuple, bytes)) and isinstance(right, int) and not isinstance(right, bool)) or (isinstance(right, (str, list, tuple, bytes)) and isinstance(left, int) and not isinstance(left, bool)))
+                bad = not (numeric_pair or sequence_repeat)
+            elif isinstance(node.op, (ast.Sub, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)):
                 bad = not (isinstance(left, (int, float, complex)) and not isinstance(left, bool) and isinstance(right, (int, float, complex)) and not isinstance(right, bool))
             if bad:
                 self.add("ERROR", "تعارض أنواع البيانات", node,

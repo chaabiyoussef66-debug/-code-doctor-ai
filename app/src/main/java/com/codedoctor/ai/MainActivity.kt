@@ -179,8 +179,8 @@ class MainActivity : ComponentActivity() {
             output.text = "أدخل كوداً أولاً."
             return
         }
-        if (source.length > 150000) {
-            output.text = "حجم الكود كبير جداً. اختصر الملف إلى 150 ألف حرف أو أقل لتجنب بطء الهاتف."
+        if (source.length > 50000) {
+            output.text = "حجم الكود كبير جداً. اختصر الملف إلى 50 ألف حرف أو أقل لتجنب بطء الهاتف."
             return
         }
         try {
@@ -255,7 +255,7 @@ class MainActivity : ComponentActivity() {
             val next = JSONArray()
             next.put(JSONObject()
                 .put("time", System.currentTimeMillis())
-                .put("source", source.take(5000))
+                .put("source", source.take(50000))
                 .put("report", report.take(20000)))
             for (i in 0 until minOf(previous.length(), 9)) {
                 next.put(previous.getJSONObject(i))
@@ -291,6 +291,17 @@ class MainActivity : ComponentActivity() {
                     exportButton.isEnabled = true
                 }
                 .setNegativeButton("إغلاق", null)
+                .setNeutralButton("مسح السجل") { _, _ ->
+                    android.app.AlertDialog.Builder(this)
+                        .setMessage("هل تريد مسح سجل الفحوصات المحفوظ على الهاتف؟")
+                        .setPositiveButton("مسح") { _, _ ->
+                            getSharedPreferences("code_doctor_history", MODE_PRIVATE)
+                                .edit().remove("items").apply()
+                            Toast.makeText(this, "تم مسح سجل الفحوصات", Toast.LENGTH_SHORT).show()
+                        }
+                        .setNegativeButton("إلغاء", null)
+                        .show()
+                }
                 .show()
         } catch (_: Exception) {
             Toast.makeText(this, "تعذر فتح سجل الفحوصات", Toast.LENGTH_SHORT).show()

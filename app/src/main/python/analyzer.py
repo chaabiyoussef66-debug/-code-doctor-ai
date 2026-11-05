@@ -549,23 +549,22 @@ class ScopeNameVisitor(ast.NodeVisitor):
     def _visit_comprehension(self, node, result_nodes):
         if not node.generators:
             return
-        # The first iterable is evaluated in the enclosing scope.
+        # The first iterable is evaluated outside the comprehension scope.
         self.visit(node.generators[0].iter)
-        comp_locals = set()
-        for generator in node.generators:
-            target_collector = LocalBindingCollector()
-            target_collector.visit(generator.target)
-            comp_locals.update(target_collector.names)
         enclosing_locals = set() if self.scope_kind == "class" else self.local_names
         child = ScopeNameVisitor(
             self.available,
-            comp_locals,
+            set(),
             self.closure_names | enclosing_locals,
             "comprehension"
         )
+        # Each target becomes visible only after its own iterable is evaluated.
         for index, generator in enumerate(node.generators):
             if index:
                 child.visit(generator.iter)
+            target_collector = LocalBindingCollector()
+            target_collector.visit(generator.target)
+            child.local_names.update(target_collector.names)
             for condition in generator.ifs:
                 child.visit(condition)
         for result_node in result_nodes:

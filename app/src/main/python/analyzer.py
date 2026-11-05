@@ -442,6 +442,182 @@ class LocalBindingCollector(ast.NodeVisitor):
         self._visit_comprehension(node, [node.key, node.value])
 
 
+class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
+    """Detect local reads that occur before a guaranteed local assignment."""
+    def __init__(self, local_names, parameters):
+        self.local_names = set(local_names)
+        self.assigned = set(parameters)
+        self.issues = []
+
+    def visit_Name(self, node):
+        if isinstance(node.ctx, ast.Load):
+            if node.id in self.local_names and node.id not in self.assigned:
+                self.issues.append(issue(
+                    "ERROR", "استعمال متغير محلي قبل التهيئة", node,
+                    "المتغير '" + node.id + "' محلي في هذه الدالة لكنه يُقرأ قبل تعيين قيمة له؛ قد يحدث UnboundLocalError.",
+                    "عيّن قيمة للمتغير قبل استعماله، أو تحقق من جميع مسارات التنفيذ.",
+                    "POTENTIAL"
+                ))
+        elif isinstance(node.ctx, ast.Store):
+            self.assigned.add(node.id)
+        elif isinstance(node.ctx, ast.Del):
+            self.assigned.discard(node.id)
+
+    def visit_Assign(self, node):
+        self.visit(node.value)
+        for target in node.targets:
+            self.visit(target)
+
+    def visit_AnnAssign(self, node):
+        if node.annotation:
+            self.visit(node.annotation)
+        if node.value is not None:
+            self.visit(node.value)
+        self.visit(node.target)
+
+    def visit_AugAssign(self, node):
+        if isinstance(node.target, ast.Name):
+            self.visit(ast.copy_location(ast.Name(id=node.target.id, ctx=ast.Load()), node.target))
+        else:
+            self.visit(node.target)
+        self.visit(node.value)
+        if isinstance(node.target, ast.Name):
+            self.assigned.add(node.target.id)
+
+    def visit_NamedExpr(self, node):
+        self.visit(node.value)
+        self.visit(node.target)
+
+    def visit_If(self, node):
+        self.visit(node.test)
+        before = set(self.assigned)
+        self.assigned = set(before)
+        for statement in node.body:
+            self.visit(statement)
+        body_assigned = set(self.assigned)
+        self.assigned = set(before)
+        for statement in node.orelse:
+            self.visit(statement)
+        else_assigned = set(self.assigned)
+        self.assigned = body_assigned & else_assigned
+
+    def visit_For(self, node):
+        self.visit(node.iter)
+        before = set(self.assigned)
+        self.visit(node.target)
+        for statement in node.body:
+            self.visit(statement)
+        body_assigned = set(self.assigned)
+        self.assigned = set(before)
+        for statement in node.orelse:
+            self.visit(statement)
+        else_assigned = set(self.assigned)
+        # A loop may execute zero times.
+        self.assigned = before & body_assigned & else_assigned
+
+    visit_AsyncFor = visit_For
+
+    def visit_While(self, node):
+        self.visit(node.test)
+        before = set(self.assigned)
+        for statement in node.body:
+            self.visit(statement)
+        body_assigned = set(self.assigned)
+        self.assigned = set(before)
+        for statement in node.orelse:
+            self.visit(statement)
+        else_assigned = set(self.assigned)
+        self.assigned = before & body_assigned & else_assigned
+
+    def visit_With(self, node):
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars:
+                self.visit(item.optional_vars)
+        for statement in node.body:
+            self.visit(statement)
+
+    visit_AsyncWith = visit_With
+
+    def visit_Try(self, node):
+        before = set(self.assigned)
+        for statement in node.body:
+            self.visit(statement)
+        normal = set(self.assigned)
+        for statement in node.orelse:
+            self.visit(statement)
+        normal = set(self.assigned)
+        paths = [normal]
+        for handler in node.handlers:
+            self.assigned = set(before)
+            self.visit(handler)
+            paths.append(set(self.assigned))
+        self.assigned = set.intersection(*paths) if paths else before
+        for statement in node.finalbody:
+            self.visit(statement)
+
+    visit_TryStar = visit_Try
+
+    def visit_ExceptHandler(self, node):
+        if node.type:
+            self.visit(node.type)
+        alias = node.name
+        if alias:
+            self.assigned.add(alias)
+        for statement in node.body:
+            self.visit(statement)
+        if alias:
+            self.assigned.discard(alias)
+
+    def visit_FunctionDef(self, node):
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for default in node.args.defaults + node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        self.assigned.add(node.name)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node):
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        self.assigned.add(node.name)
+
+    def visit_Lambda(self, node):
+        for default in node.args.defaults + node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+
+    def visit_ListComp(self, node):
+        self._visit_comprehension(node, [node.elt])
+
+    def visit_SetComp(self, node):
+        self._visit_comprehension(node, [node.elt])
+
+    def visit_GeneratorExp(self, node):
+        self._visit_comprehension(node, [node.elt])
+
+    def visit_DictComp(self, node):
+        self._visit_comprehension(node, [node.key, node.value])
+
+    def _visit_comprehension(self, node, values):
+        if not node.generators:
+            return
+        self.visit(node.generators[0].iter)
+        for generator in node.generators:
+            if generator is not node.generators[0]:
+                self.visit(generator.iter)
+            for condition in generator.ifs:
+                self.visit(condition)
+        for value in values:
+            self.visit(value)
+
+
 class ScopeNameVisitor(ast.NodeVisitor):
     """Conservative undefined-name checks respecting Python lexical scopes."""
     def __init__(self, available, local_names=None, closure_names=None, scope_kind="module"):
@@ -510,6 +686,11 @@ class ScopeNameVisitor(ast.NodeVisitor):
         for statement in node.body:
             child.visit(statement)
         self.issues.extend(child.issues)
+
+        local_checker = LocalReadBeforeWriteVisitor(locals_for_function, parameters)
+        for statement in node.body:
+            local_checker.visit(statement)
+        self.issues.extend(local_checker.issues)
 
     visit_AsyncFunctionDef = visit_FunctionDef
 

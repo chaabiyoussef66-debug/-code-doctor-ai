@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:allowBackup="false"
-        android:label="@string/app_name"
+        android:label="Code Doctor AI"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:name="com.chaquo.python.android.PyApplication">
         <activity

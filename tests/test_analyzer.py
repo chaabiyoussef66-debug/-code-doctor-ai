@@ -27,7 +27,28 @@ def test_clean_not_certified():
     result = check("def add(a,b):\n return a+b")
     assert result["status"] == "NO_RULE_MATCH" and result["issues"] == []
 
+def test_function_scope():
+    src = "def first():\n    hidden = 1\ndef second():\n    return hidden"
+    assert any(x["title"] == "اسم أو متغير غير معرّف" for x in check(src)["issues"])
+
+def test_local_read_before_write():
+    src = "def calculate():\n    print(value)\n    value = 3"
+    assert any(x["title"] == "استعمال متغير محلي قبل التهيئة" for x in check(src)["issues"])
+
+def test_comprehension_target_scope():
+    src = "items = [1, 2]\nresult = [x for x in items]\nprint(x)"
+    assert any(x["title"] == "اسم أو متغير غير معرّف" for x in check(src)["issues"])
+
+def test_subprocess_shell_security():
+    src = "import subprocess\nsubprocess.run(command, shell=True)"
+    assert any(x["title"] == "subprocess مع shell=True" for x in check(src)["issues"])
+
+def test_nonlocal_compile_error():
+    src = "def outer():\n    def inner():\n        nonlocal missing"
+    assert check(src)["status"] == "SYNTAX_ERROR"
+
+
 if __name__ == "__main__":
-    for fn in (test_syntax, test_division, test_eval, test_mutable_default, test_clean_not_certified):
+    for fn in (test_syntax, test_division, test_guarded_zero_division, test_eval, test_mutable_default, test_clean_not_certified, test_function_scope, test_local_read_before_write, test_comprehension_target_scope, test_subprocess_shell_security, test_nonlocal_compile_error):
         fn()
         print("PASS", fn.__name__)

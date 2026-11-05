@@ -114,19 +114,57 @@ class NameUseVisitor(ast.NodeVisitor):
 class Inspector(ast.NodeVisitor):
     def __init__(self):
         self.issues = []
+        self.constants = {}
 
     def add(self, severity, title, node, message, suggestion, confidence="CONFIRMED"):
         self.issues.append(issue(severity, title, node, message, suggestion, confidence))
 
+    def resolve_literal(self, node):
+        known, value = literal(node)
+        if known:
+            return True, value
+        if isinstance(node, ast.Name) and node.id in self.constants:
+            return True, self.constants[node.id]
+        return False, None
+
+    def visit_Assign(self, node):
+        self.visit(node.value)
+        known, value = self.resolve_literal(node.value)
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                if known:
+                    self.constants[target.id] = value
+                else:
+                    self.constants.pop(target.id, None)
+            else:
+                self.visit(target)
+
+    def visit_AnnAssign(self, node):
+        if node.value is not None:
+            self.visit(node.value)
+            known, value = self.resolve_literal(node.value)
+            if isinstance(node.target, ast.Name):
+                if known:
+                    self.constants[node.target.id] = value
+                else:
+                    self.constants.pop(node.target.id, None)
+        self.visit(node.target)
+
+    def visit_AugAssign(self, node):
+        self.visit(node.value)
+        if isinstance(node.target, ast.Name):
+            self.constants.pop(node.target.id, None)
+        self.visit(node.target)
+
     def visit_BinOp(self, node):
         if isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)):
-            known, value = literal(node.right)
+            known, value = self.resolve_literal(node.right)
             if known and isinstance(value, (int, float, complex)) and not isinstance(value, bool) and value == 0:
                 self.add("ERROR", "قسمة على صفر", node,
                     "المقام قيمة ثابتة تساوي صفراً؛ العملية ستطلق ZeroDivisionError.",
                     "تحقق من المقام قبل القسمة أو عالج حالة الصفر.")
-        left_known, left = literal(node.left)
-        right_known, right = literal(node.right)
+        left_known, left = self.resolve_literal(node.left)
+        right_known, right = self.resolve_literal(node.right)
         if left_known and right_known:
             bad = False
             if isinstance(node.op, ast.Add):

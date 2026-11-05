@@ -190,6 +190,27 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         source = "import pickle\npickle.loads(data)"
         self.assertIn("فك تسلسل غير آمن", self.titles(source))
 
+    def test_requests_verify_false_is_flagged(self):
+        source = "import requests\nrequests.get(url, verify=False)"
+        self.assertIn("تعطيل التحقق من شهادة HTTPS", self.titles(source))
+
+    def test_requests_verify_true_is_not_flagged(self):
+        source = "import requests\nrequests.get(url, verify=True)"
+        self.assertNotIn("تعطيل التحقق من شهادة HTTPS", self.titles(source))
+
+    def test_weak_hash_is_flagged(self):
+        source = "import hashlib\nhashlib.md5(data)"
+        self.assertIn("خوارزمية تجزئة ضعيفة", self.titles(source))
+
+    def test_insecure_tempfile_helper_is_flagged(self):
+        source = "import tempfile\ntempfile.mktemp()"
+        self.assertIn("إنشاء ملف مؤقت بطريقة غير آمنة", self.titles(source))
+
+    def test_sql_fstring_is_flagged(self):
+        source = 'cursor.execute(f"SELECT * FROM users WHERE name = {name}")'
+        self.assertIn("احتمال حقن SQL عبر f-string", self.titles(source))
+
+
     def test_syntax_error_preserved(self):
         self.assertEqual(scan("def broken(:")["status"], "SYNTAX_ERROR")
 

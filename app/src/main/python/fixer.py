@@ -131,6 +131,17 @@ def _find_safe_name_typo(tree):
     import builtins
     from difflib import SequenceMatcher
 
+    def similarity(left, right):
+        if len(left) == len(right):
+            differences = [i for i, (a, b) in enumerate(zip(left, right)) if a != b]
+            if (len(differences) == 2
+                    and differences[1] == differences[0] + 1
+                    and left[differences[0]] == right[differences[1]]
+                    and left[differences[1]] == right[differences[0]]):
+                # Treat one adjacent transposition as a likely typing slip.
+                return 0.90
+        return SequenceMatcher(None, left, right).ratio()
+
     matches = []
     for function in ast.walk(tree):
         if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -158,7 +169,7 @@ def _find_safe_name_typo(tree):
                 if node.id in candidates or len(node.id) < 3:
                     continue
                 scored = sorted(
-                    ((SequenceMatcher(None, node.id, name).ratio(), name)
+                    ((similarity(node.id, name), name)
                      for name in candidates if len(name) >= 3),
                     reverse=True
                 )

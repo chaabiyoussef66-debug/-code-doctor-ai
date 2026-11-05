@@ -89,6 +89,15 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         source = "class Sample:\n    def method(self, value):\n        return self.value + value"
         self.assertFalse(self.has_name_error(source))
 
+    def test_nested_class_does_not_close_over_outer_class_names(self):
+        source = "class Outer:\n    hidden = 1\n    class Inner:\n        def method(self):\n            return hidden"
+        self.assertTrue(self.has_name_error(source))
+
+    def test_method_does_not_use_class_constant_as_local_constant(self):
+        source = "class Sample:\n    denominator = 0\n    def calculate(self):\n        return 10 / denominator"
+        self.assertNotIn("قسمة على صفر", self.titles(source))
+
+
     def test_comprehension_target_does_not_leak_to_function(self):
         source = "def build(items):\n    result = [item for item in items]\n    return item"
         self.assertTrue(self.has_name_error(source))

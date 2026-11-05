@@ -131,6 +131,29 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         source = "class Sample:\n    denominator = 0\n    def calculate(self, denominator):\n        return 10 / denominator"
         self.assertNotIn("قسمة على صفر", self.titles(source))
 
+
+    def test_unhashable_set_literal_does_not_crash_analyzer(self):
+        result = scan("value = {[]}")
+        self.assertIn(result["status"], ("NO_RULE_MATCH", "ISSUES_FOUND"))
+
+    def test_direct_eval_is_flagged(self):
+        self.assertIn("تنفيذ ديناميكي للكود", self.titles("result = eval(user_input)"))
+
+    def test_unrelated_method_named_eval_is_not_flagged(self):
+        self.assertNotIn("تنفيذ ديناميكي للكود", self.titles("result = service.eval()"))
+
+    def test_subprocess_shell_true_is_flagged(self):
+        source = "import subprocess\nsubprocess.run(command, shell=True)"
+        self.assertIn("subprocess مع shell=True", self.titles(source))
+
+    def test_subprocess_shell_false_is_not_flagged(self):
+        source = "import subprocess\nsubprocess.run([command, argument], shell=False)"
+        self.assertNotIn("subprocess مع shell=True", self.titles(source))
+
+    def test_pickle_load_is_flagged(self):
+        source = "import pickle\npickle.loads(data)"
+        self.assertIn("فك تسلسل غير آمن", self.titles(source))
+
     def test_syntax_error_preserved(self):
         self.assertEqual(scan("def broken(:")["status"], "SYNTAX_ERROR")
 

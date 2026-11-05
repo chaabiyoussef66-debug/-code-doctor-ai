@@ -479,10 +479,11 @@ class ScopeNameVisitor(ast.NodeVisitor):
             target_collector = LocalBindingCollector()
             target_collector.visit(generator.target)
             comp_locals.update(target_collector.names)
+        enclosing_locals = set() if self.scope_kind == "class" else self.local_names
         child = ScopeNameVisitor(
             self.available,
             comp_locals,
-            self.closure_names | self.local_names,
+            self.closure_names | enclosing_locals,
             "comprehension"
         )
         for index, generator in enumerate(node.generators):

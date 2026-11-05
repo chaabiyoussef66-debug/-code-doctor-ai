@@ -114,7 +114,7 @@ def fix_flask_security(source):
     if not any(item["line"] > 0 for item in changes):
         return json.dumps({
             "can_apply": False, "fixed_code": source, "changes": changes,
-            "message": "لم يُجرَ تعديل آلي. تحذير كلمة المرور يحتاج إعداد تخزين آمن خاص بالتطبيق؛ لم أغيّر الكود."
+            "message": "لم يُجرَ تعديل آلي. تحذير كلمة المرور يحتاج تخزين تجزئة خارج الكود والتحقق باستعمال werkzeug.security.check_password_hash؛ لم أغيّر الكود."
         }, ensure_ascii=False)
 
     message = "معاينة إصلاحات Flask الآمنة. راجع الكود قبل التطبيق وأعد الفحص."

@@ -231,7 +231,7 @@ class Inspector(ast.NodeVisitor):
     def visit_BinOp(self, node):
         if isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)):
             known, value = self.resolve_literal(node.right)
-            if known and isinstance(value, (int, float, complex)) and not isinstance(value, bool) and value == 0:
+            if known and isinstance(value, (int, float, complex)) and value == 0:
                 self.add("ERROR", "قسمة على صفر", node,
                     "المقام قيمة ثابتة تساوي صفراً؛ العملية ستطلق ZeroDivisionError.",
                     "تحقق من المقام قبل القسمة أو عالج حالة الصفر.")
@@ -267,11 +267,26 @@ class Inspector(ast.NodeVisitor):
         known, value = self.resolve_literal(node.value)
         index_known, index = self.resolve_literal(node.slice)
         if known and index_known and isinstance(value, (list, tuple, str, bytes)):
-            if isinstance(index, int) and not isinstance(index, bool):
+            if isinstance(index, int):
                 if index >= len(value) or index < -len(value):
                     self.add("ERROR", "فهرس خارج الحدود", node,
                         "الفهرس " + str(index) + " خارج طول العنصر (" + str(len(value)) + ")؛ سيحدث IndexError.",
                         "استعمل فهرساً بين -" + str(len(value)) + " و" + str(max(0, len(value)-1)) + " أو تحقق من الطول.")
+        if known and isinstance(value, (list, tuple, str, bytes)) and index_known:
+            if not isinstance(index, (int, slice)):
+                self.add("ERROR", "نوع فهرس غير صالح", node,
+                    "الفهرس من النوع " + type(index).__name__ + " غير صالح لهذا النوع؛ سيحدث TypeError.",
+                    "استعمل عدداً صحيحاً أو شريحة slice.")
+        if known and isinstance(value, dict) and index_known:
+            try:
+                if index not in value:
+                    self.add("ERROR", "مفتاح غير موجود", node,
+                        "المفتاح الثابت غير موجود في القاموس؛ سيحدث KeyError.",
+                        "تحقق من وجود المفتاح أو استعمل get() بقيمة افتراضية.")
+            except TypeError:
+                self.add("ERROR", "نوع مفتاح غير صالح", node,
+                    "المفتاح غير قابل للتجزئة؛ سيحدث TypeError.",
+                    "استعمل مفتاحاً قابلاً للتجزئة مثل النص أو العدد أو tuple صالح.")
         if known and not isinstance(value, (list, tuple, str, bytes, dict)) and index_known:
             self.add("ERROR", "نوع لا يدعم الفهرسة", node,
                 "القيمة الثابتة من النوع " + type(value).__name__ + " لا تدعم الفهرسة؛ سيحدث TypeError.",
@@ -323,7 +338,7 @@ class Inspector(ast.NodeVisitor):
                     "استعمل معاملات الاستعلام parameterized queries بدلاً من تركيب النص.", "POTENTIAL")
         if isinstance(node.func, ast.Name) and node.func.id == "len" and node.args:
             known, value = literal(node.args[0])
-            if known and isinstance(value, (int, float, complex, bool)):
+            if known and (isinstance(value, (int, float, complex, bool)) or value is None):
                 self.add("ERROR", "نوع غير صالح للدالة len", node,
                     "الدالة len لا تقبل قيمة عددية ثابتة؛ سيحدث TypeError.",
                     "مرر سلسلة أو قائمة أو كائناً يدعم len().")

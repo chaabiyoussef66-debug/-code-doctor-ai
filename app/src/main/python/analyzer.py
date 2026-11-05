@@ -435,6 +435,66 @@ class Inspector(ast.NodeVisitor):
         self.class_scope_stack.pop()
         self.constants = restore_constants
 
+
+def analyze_known_function_calls(tree):
+    """Analyze direct calls with statically known literal arguments, without executing code."""
+    functions = {
+        node.name: node for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    found = []
+    for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+        function = functions.get(call.func.id)
+        if function is None:
+            continue
+        positional = function.args.posonlyargs + function.args.args
+        keyword_only = function.args.kwonlyargs
+        if len(call.args) > len(positional) and function.args.vararg is None:
+            continue
+        bound = {}
+        valid = True
+        for parameter, argument in zip(positional, call.args):
+            known, value = literal(argument)
+            if not known:
+                valid = False
+                break
+            bound[parameter.arg] = value
+        if not valid:
+            continue
+        for keyword in call.keywords:
+            if keyword.arg is None:
+                valid = False
+                break
+            known, value = literal(keyword.value)
+            if not known or keyword.arg in bound:
+                valid = False
+                break
+            bound[keyword.arg] = value
+        if not valid:
+            continue
+        defaults = list(function.args.defaults)
+        default_parameters = positional[len(positional) - len(defaults):] if defaults else []
+        for parameter, default in zip(default_parameters, defaults):
+            if parameter.arg not in bound:
+                known, value = literal(default)
+                if known:
+                    bound[parameter.arg] = value
+        kw_defaults = dict(zip((arg.arg for arg in keyword_only), function.args.kw_defaults))
+        for parameter in keyword_only:
+            if parameter.arg not in bound and kw_defaults[parameter.arg] is not None:
+                known, value = literal(kw_defaults[parameter.arg])
+                if known:
+                    bound[parameter.arg] = value
+        required = {arg.arg for arg in positional + keyword_only}
+        if not required.issubset(bound):
+            continue
+        call_inspector = Inspector()
+        call_inspector.constants = dict(bound)
+        for statement in function.body:
+            call_inspector.visit(statement)
+        found.extend(call_inspector.issues)
+    return found
+
 class LocalBindingCollector(ast.NodeVisitor):
     """Collect bindings for a single Python scope without crossing nested scopes."""
     def __init__(self):
@@ -879,6 +939,7 @@ def analyze(source):
     inspector = Inspector()
     inspector.visit(tree)
     issues.extend(inspector.issues)
+    issues.extend(analyze_known_function_calls(tree))
 
     # Resolve names per lexical scope. A local variable in one function
     # must never make the same name appear defined in another function.

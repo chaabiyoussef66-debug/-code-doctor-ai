@@ -333,10 +333,12 @@ class Inspector(ast.NodeVisitor):
         if node.returns:
             self.visit(node.returns)
 
+        restore_constants = dict(self.constants)
         if self.class_scope_stack and self.function_depth == self.class_scope_stack[-1][1]:
             outer = dict(self.class_scope_stack[-1][0])
         else:
-            outer = dict(self.constants)
+            outer = dict(restore_constants)
+        self.constants = dict(outer)
         collector = LocalBindingCollector()
         for statement in node.body:
             collector.visit(statement)
@@ -347,7 +349,8 @@ class Inspector(ast.NodeVisitor):
         for statement in node.body:
             self.visit(statement)
         self.function_depth -= 1
-        self.constants = outer
+        # Restore the surrounding namespace (class or module) after the function.
+        self.constants = restore_constants
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
@@ -355,11 +358,16 @@ class Inspector(ast.NodeVisitor):
         for default in node.args.defaults + node.args.kw_defaults:
             if default is not None:
                 self.visit(default)
-        outer = dict(self.constants)
+        restore_constants = dict(self.constants)
+        if self.class_scope_stack and self.function_depth == self.class_scope_stack[-1][1]:
+            outer = dict(self.class_scope_stack[-1][0])
+        else:
+            outer = dict(restore_constants)
+        self.constants = dict(outer)
         for name in ScopeNameVisitor.parameters(node.args):
             self.constants.pop(name, None)
         self.visit(node.body)
-        self.constants = outer
+        self.constants = restore_constants
 
     def visit_ClassDef(self, node):
         for decorator in node.decorator_list:

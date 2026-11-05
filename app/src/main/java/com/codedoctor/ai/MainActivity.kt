@@ -263,9 +263,20 @@ class MainActivity : ComponentActivity() {
                 return
             }
             val fixed = result.optString("fixed_code", source)
+            val changeList = result.optJSONArray("changes") ?: JSONArray()
+            val preview = StringBuilder(result.optString("message"))
+            for (i in 0 until changeList.length()) {
+                val change = changeList.optJSONObject(i) ?: continue
+                preview.append("\n\n• ").append(change.optString("title"))
+                    .append("\n").append(change.optString("message"))
+            }
+            preview.append("\n\n========== الكود الأصلي ==========\n")
+                .append(source)
+                .append("\n\n========== الكود المقترح ==========\n")
+                .append(fixed)
             android.app.AlertDialog.Builder(this)
-                .setTitle("معاينة الكود المصحح")
-                .setMessage(result.optString("message") + "\n\n" + fixed)
+                .setTitle("معاينة قبل وبعد الإصلاح")
+                .setMessage(preview.toString())
                 .setPositiveButton("تطبيق") { _, _ -> editor.setText(fixed) }
                 .setNeutralButton("نسخ") { _, _ ->
                     val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager

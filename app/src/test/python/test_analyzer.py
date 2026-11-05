@@ -19,11 +19,11 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertIn("اسم أو متغير غير معرّف", self.titles("print(tax_rate)"))
 
     def test_user_typo_name_example(self):
-        result = scan('name = "Youssef"\\nprint(nam)')
+        result = scan('name = "Youssef"\nprint(nam)')
         self.assertIn("اسم أو متغير غير معرّف", [x["title"] for x in result["issues"]])
 
     def test_zero_division_through_variable(self):
-        result = scan("a = 10\\nb = 0\\nresult = a / b\\nprint(result)")
+        result = scan("a = 10\nb = 0\nresult = a / b\nprint(result)")
         item = next(x for x in result["issues"] if x["title"] == "قسمة على صفر")
         self.assertEqual(item["line"], 3)
 

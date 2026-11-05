@@ -402,7 +402,7 @@ class Inspector(ast.NodeVisitor):
                     and query.func.attr == "format"
                     and isinstance(query.func.value, ast.Constant)
                     and isinstance(query.func.value.value, str)
-                    and bool(re.search(r"(?i)\\b(select|insert|update|delete|replace)\\b", query.func.value.value))
+                    and bool(re.search(r"(?i)\b(select|insert|update|delete|replace)\b", query.func.value.value))
                     and bool(query.args or query.keywords)
                 )
             ):

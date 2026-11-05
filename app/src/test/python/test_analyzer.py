@@ -50,6 +50,19 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
     def test_undefined_name_inside_function(self):
         self.assertTrue(self.has_name_error("def calculate():\n    return missing_value"))
 
+    def test_local_read_before_assignment_is_reported(self):
+        source = "def calculate():\n    print(value)\n    value = 3"
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_local_assigned_on_both_if_paths_is_safe(self):
+        source = "def calculate(flag):\n    if flag:\n        value = 1\n    else:\n        value = 2\n    return value"
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_local_assigned_on_only_one_if_path_is_potentially_unbound(self):
+        source = "def calculate(flag):\n    if flag:\n        value = 1\n    return value"
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+
     def test_sequence_repetition_is_valid(self):
         self.assertNotIn("تعارض أنواع البيانات", self.titles('message = "ha" * 3'))
 

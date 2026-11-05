@@ -25,7 +25,16 @@ def literal(node):
             if not known:
                 return False, None
             values.append(value)
-        return True, values if isinstance(node, ast.List) else tuple(values) if isinstance(node, ast.Tuple) else set(values)
+        if isinstance(node, ast.List):
+            return True, values
+        if isinstance(node, ast.Tuple):
+            return True, tuple(values)
+        try:
+            return True, set(values)
+        except (TypeError, ValueError):
+            # A syntactically valid set literal can still fail at runtime
+            # when an element is unhashable; do not crash the analyzer.
+            return False, None
     if isinstance(node, ast.Dict):
         pairs = []
         for key, value_node in zip(node.keys, node.values):

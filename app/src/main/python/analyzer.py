@@ -617,14 +617,20 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
     def _visit_comprehension(self, node, values):
         if not node.generators:
             return
+        # The first iterable is evaluated in the containing function.
         self.visit(node.generators[0].iter)
-        for generator in node.generators:
-            if generator is not node.generators[0]:
-                self.visit(generator.iter)
+        child = LocalReadBeforeWriteVisitor(self.local_names, self.assigned)
+        for index, generator in enumerate(node.generators):
+            if index:
+                child.visit(generator.iter)
+            target_collector = LocalBindingCollector()
+            target_collector.visit(generator.target)
+            child.assigned.update(target_collector.names)
             for condition in generator.ifs:
-                self.visit(condition)
+                child.visit(condition)
         for value in values:
-            self.visit(value)
+            child.visit(value)
+        self.issues.extend(child.issues)
 
 
 class ScopeNameVisitor(ast.NodeVisitor):

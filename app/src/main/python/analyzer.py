@@ -239,14 +239,24 @@ class Inspector(ast.NodeVisitor):
         right_known, right = self.resolve_literal(node.right)
         if left_known and right_known:
             bad = False
+            numeric_pair = isinstance(left, (int, float, complex)) and isinstance(right, (int, float, complex))
             if isinstance(node.op, ast.Add):
-                bad = not ((isinstance(left, (int, float, complex)) and not isinstance(left, bool) and isinstance(right, (int, float, complex)) and not isinstance(right, bool)) or (type(left) is type(right) and isinstance(left, (str, list, tuple))))
+                sequence_pair = type(left) is type(right) and isinstance(left, (str, bytes, list, tuple))
+                bad = not (numeric_pair or sequence_pair)
             elif isinstance(node.op, ast.Mult):
-                numeric_pair = (isinstance(left, (int, float, complex)) and not isinstance(left, bool) and isinstance(right, (int, float, complex)) and not isinstance(right, bool))
-                sequence_repeat = ((isinstance(left, (str, list, tuple, bytes)) and isinstance(right, int) and not isinstance(right, bool)) or (isinstance(right, (str, list, tuple, bytes)) and isinstance(left, int) and not isinstance(left, bool)))
+                sequence_repeat = (
+                    (isinstance(left, (str, bytes, list, tuple)) and isinstance(right, int)) or
+                    (isinstance(right, (str, bytes, list, tuple)) and isinstance(left, int))
+                )
                 bad = not (numeric_pair or sequence_repeat)
-            elif isinstance(node.op, (ast.Sub, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)):
-                bad = not (isinstance(left, (int, float, complex)) and not isinstance(left, bool) and isinstance(right, (int, float, complex)) and not isinstance(right, bool))
+            elif isinstance(node.op, (ast.Sub, ast.Div, ast.Pow)):
+                bad = not numeric_pair
+            elif isinstance(node.op, ast.FloorDiv):
+                bad = not (isinstance(left, (int, float)) and isinstance(right, (int, float)))
+            elif isinstance(node.op, ast.Mod):
+                numeric_mod = isinstance(left, (int, float)) and isinstance(right, (int, float))
+                string_format = isinstance(left, (str, bytes))
+                bad = not (numeric_mod or string_format)
             if bad:
                 self.add("ERROR", "تعارض أنواع البيانات", node,
                     "العملية بين قيم ثابتة من أنواع غير متوافقة؛ قد تسبب TypeError.",

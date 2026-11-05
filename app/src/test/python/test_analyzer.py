@@ -18,6 +18,15 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
     def test_undefined_name(self):
         self.assertIn("اسم أو متغير غير معرّف", self.titles("print(tax_rate)"))
 
+    def test_user_typo_name_example(self):
+        result = scan('name = "Youssef"\\nprint(nam)')
+        self.assertIn("اسم أو متغير غير معرّف", [x["title"] for x in result["issues"]])
+
+    def test_zero_division_through_variable(self):
+        result = scan("a = 10\\nb = 0\\nresult = a / b\\nprint(result)")
+        item = next(x for x in result["issues"] if x["title"] == "قسمة على صفر")
+        self.assertEqual(item["line"], 3)
+
     def test_constant_index_out_of_range(self):
         self.assertIn("فهرس خارج الحدود", self.titles("items = [1, 2]\nprint(items[5])"))
 

@@ -56,7 +56,7 @@ class ConservativeFixerTests(unittest.TestCase):
 
 
     def test_suggests_clear_local_name_typo(self):
-        source = "def calculate():\\n    total = 100\\n    print(totla)\\n"
+        source = "def calculate():\n    total = 100\n    print(totla)\n"
         result = repair(source)
         self.assertTrue(result["can_apply"])
         self.assertIn("print(total)", result["fixed_code"])
@@ -64,31 +64,31 @@ class ConservativeFixerTests(unittest.TestCase):
         compile(result["fixed_code"], "<fixed>", "exec")
 
     def test_suggests_clear_builtin_typo(self):
-        source = "def show():\\n    pritn('hello')\\n"
+        source = "def show():\n    pritn('hello')\n"
         result = repair(source)
         self.assertTrue(result["can_apply"])
         self.assertIn("print('hello')", result["fixed_code"])
 
     def test_does_not_guess_when_no_similar_name_exists(self):
-        source = "def show():\\n    print(missing_value)\\n"
+        source = "def show():\n    print(missing_value)\n"
         result = repair(source)
         self.assertFalse(result["can_apply"])
         self.assertEqual(result["fixed_code"], source)
 
     def test_does_not_change_valid_builtin(self):
-        source = "def show():\\n    print('hello')\\n"
+        source = "def show():\n    print('hello')\n"
         result = repair(source)
         self.assertFalse(result["can_apply"])
         self.assertEqual(result["fixed_code"], source)
 
     def test_ambiguous_typo_is_not_changed(self):
-        source = "def show():\\n    total = 1\\n    tatal = 2\\n    print(tota)\\n"
+        source = "def show():\n    total = 1\n    tatal = 2\n    print(tota)\n"
         result = repair(source)
         self.assertFalse(result["can_apply"])
         self.assertEqual(result["fixed_code"], source)
 
     def test_typo_fix_is_preview_only_and_does_not_execute(self):
-        source = "def show():\\n    total = 1\\n    print(totla)\\n"
+        source = "def show():\n    total = 1\n    print(totla)\n"
         result = repair(source)
         self.assertTrue(result["can_apply"])
         self.assertIn("totla", source)

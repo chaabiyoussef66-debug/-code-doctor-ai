@@ -36,18 +36,18 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
 
 
     def test_zero_division_from_literal_function_argument(self):
-        source = "def calculate(divisor):\\n    result = 100 / divisor\\n    print(result)\\n\\ncalculate(0)"
+        source = "def calculate(divisor):\n    result = 100 / divisor\n    print(result)\n\ncalculate(0)"
         result = scan(source)
         item = next(x for x in result["issues"] if x["title"] == "قسمة على صفر")
         self.assertEqual(item["line"], 2)
         self.assertEqual(item["confidence"], "CONFIRMED")
 
     def test_nonzero_function_argument_does_not_report_zero_division(self):
-        source = "def calculate(divisor):\\n    result = 100 / divisor\\n    print(result)\\n\\ncalculate(5)"
+        source = "def calculate(divisor):\n    result = 100 / divisor\n    print(result)\n\ncalculate(5)"
         self.assertNotIn("قسمة على صفر", self.titles(source))
 
     def test_zero_function_argument_is_safe_when_division_is_guarded(self):
-        source = "def calculate(divisor):\\n    if divisor != 0:\\n        result = 100 / divisor\\n        print(result)\\n\\ncalculate(0)"
+        source = "def calculate(divisor):\n    if divisor != 0:\n        result = 100 / divisor\n        print(result)\n\ncalculate(0)"
         self.assertNotIn("قسمة على صفر", self.titles(source))
 
     def test_constant_index_out_of_range(self):

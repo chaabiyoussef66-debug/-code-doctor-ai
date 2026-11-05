@@ -236,6 +236,23 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertIn("احتمال حقن SQL عبر f-string", self.titles(source))
 
 
+
+    def test_module_read_before_assignment_is_reported(self):
+        source = "print(value)\nvalue = 2"
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_module_read_after_assignment_is_safe(self):
+        source = "value = 2\nprint(value)"
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_class_read_before_assignment_is_reported(self):
+        source = "class Sample:\n    print(value)\n    value = 2"
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_class_read_after_assignment_is_safe(self):
+        source = "class Sample:\n    value = 2\n    print(value)"
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
     def test_syntax_error_preserved(self):
         self.assertEqual(scan("def broken(:")["status"], "SYNTAX_ERROR")
 

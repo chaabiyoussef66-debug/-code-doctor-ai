@@ -394,7 +394,18 @@ class Inspector(ast.NodeVisitor):
                 self.add("WARNING", "احتمال حقن SQL عبر f-string", node,
                     "بناء استعلام SQL باستخدام f-string قد يدمج مدخلات مباشرة داخل الاستعلام.",
                     "استعمل معاملات الاستعلام parameterized queries بدلاً من تركيب النص.", "POTENTIAL")
-            elif self.is_dynamic_sql(query):
+            elif (
+                self.is_dynamic_sql(query)
+                or (
+                    isinstance(query, ast.Call)
+                    and isinstance(query.func, ast.Attribute)
+                    and query.func.attr == "format"
+                    and isinstance(query.func.value, ast.Constant)
+                    and isinstance(query.func.value.value, str)
+                    and bool(re.search(r"(?i)\\b(select|insert|update|delete|replace)\\b", query.func.value.value))
+                    and bool(query.args or query.keywords)
+                )
+            ):
                 self.add("WARNING", "احتمال حقن SQL عبر تركيب النص", node,
                     "يبدو أن استعلام SQL يُبنى بدمج النصوص أو format؛ قد يؤدي إدخال بيانات غير موثوقة إلى حقن SQL.",
                     "استعمل معاملات الاستعلام parameterized queries ولا تدمج مدخلات المستخدم في نص SQL.", "POTENTIAL")

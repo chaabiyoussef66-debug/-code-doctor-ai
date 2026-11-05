@@ -182,8 +182,8 @@ class Inspector(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Subscript(self, node):
-        known, value = literal(node.value)
-        index_known, index = literal(node.slice)
+        known, value = self.resolve_literal(node.value)
+        index_known, index = self.resolve_literal(node.slice)
         if known and index_known and isinstance(value, (list, tuple, str, bytes)):
             if isinstance(index, int) and not isinstance(index, bool):
                 if index >= len(value) or index < -len(value):

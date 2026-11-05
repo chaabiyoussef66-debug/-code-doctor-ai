@@ -53,6 +53,17 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         titles = self.titles('message = "ha" * 3')
         self.assertNotIn("تعارض أنواع البيانات", titles)
 
+    def test_local_name_does_not_leak_between_functions(self):
+        source = "def first():\\n    hidden = 1\\ndef second():\\n    return hidden"
+        self.assertIn("اسم أو متغير غير معرّف", self.titles(source))
+
+    def test_nested_function_can_read_outer_local(self):
+        source = "def outer():\\n    value = 3\\n    def inner():\\n        return value\\n    return inner()"
+        self.assertNotIn("اسم أو متغير غير معرّف", self.titles(source))
+
+    def test_builtin_inside_function_is_not_undefined(self):
+        self.assertNotIn("اسم أو متغير غير معرّف", self.titles("def show(items):\\n    return len(items)"))
+
     def test_syntax_error_preserved(self):
         self.assertEqual(scan("def broken(:")["status"], "SYNTAX_ERROR")
 

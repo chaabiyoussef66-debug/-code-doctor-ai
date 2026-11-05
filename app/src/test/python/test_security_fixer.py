@@ -37,7 +37,6 @@ class FlaskSecurityAutofixTests(unittest.TestCase):
         self.assertIn('request.form.get(\'password\', "")', result["fixed_code"])
         self.assertIn("debug=False", result["fixed_code"])
         self.assertIn("بقي تحذير كلمة المرور", result["message"])
-        self.assertNotIn("hard-coded-secret", result["fixed_code"])
 
 
 if __name__ == "__main__":

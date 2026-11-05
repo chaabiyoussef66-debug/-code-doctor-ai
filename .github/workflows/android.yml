@@ -48,24 +48,31 @@ jobs:
       - name: Build signed release APK
         if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
         run: gradle --no-daemon assembleRelease
-      - name: Download previously installed debug build for signature comparison
+      - name: Download previous signed release for signature comparison
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: CodeDoctorAI-debug
-          run-id: 41881592599
+          name: CodeDoctorAI-release-signed
+          run-id: 42016146922
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          path: old-debug
+          path: old-release
       - name: Verify APK signatures and print certificate fingerprints
         if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
         run: |
           echo '=== NEW RELEASE APK ==='
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
-          if [ -f old-debug/app-debug.apk ]; then
-            echo '=== PREVIOUS DEBUG APK ==='
-            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs old-debug/app-debug.apk
+          if [ -f old-release/app-release.apk ]; then
+            echo '=== PREVIOUS SIGNED RELEASE APK ==='
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs old-release/app-release.apk
+            NEW_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk | grep 'Signer #1 certificate SHA-256 digest')
+            OLD_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs old-release/app-release.apk | grep 'Signer #1 certificate SHA-256 digest')
+            if [ "$NEW_CERT" != "$OLD_CERT" ]; then
+              echo 'ERROR: Signing certificate differs from the previous signed release.'
+              exit 1
+            fi
+            echo 'Signing certificate matches the previous signed release.'
           else
-            echo 'Previous debug artifact was not downloaded; only new release signature was verified.'
+            echo 'Previous signed release artifact was not downloaded; only the new release signature was verified.'
           fi
       - uses: actions/upload-artifact@v4
         with:

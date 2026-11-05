@@ -128,6 +128,7 @@ class MainActivity : ComponentActivity() {
                     report.append("• ").append(item.optString("severity"))
                         .append(" — ").append(item.optString("title"))
                         .append("\nالسطر: ").append(item.optInt("line"))
+                        .append("\nدرجة الثقة: ").append(if (item.optString("confidence") == "CONFIRMED") "خطأ مؤكد" else "احتمال يحتاج مراجعة")
                         .append("\n").append(item.optString("message"))
                         .append("\nاقتراح: ").append(item.optString("suggestion"))
                         .append("\n\n")

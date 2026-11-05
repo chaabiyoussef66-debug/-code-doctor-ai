@@ -156,6 +156,67 @@ class Inspector(ast.NodeVisitor):
             self.constants.pop(node.target.id, None)
         self.visit(node.target)
 
+    def known_condition(self, node):
+        """Evaluate only simple conditions whose operands are known literals."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+            return True, node.value
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            known, value = self.known_condition(node.operand)
+            return (True, not value) if known else (False, None)
+        if isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1:
+            left_known, left = self.resolve_literal(node.left)
+            right_known, right = self.resolve_literal(node.comparators[0])
+            if not (left_known and right_known):
+                return False, None
+            op = node.ops[0]
+            try:
+                if isinstance(op, ast.Eq):
+                    return True, left == right
+                if isinstance(op, ast.NotEq):
+                    return True, left != right
+                if isinstance(op, ast.Lt):
+                    return True, left < right
+                if isinstance(op, ast.LtE):
+                    return True, left <= right
+                if isinstance(op, ast.Gt):
+                    return True, left > right
+                if isinstance(op, ast.GtE):
+                    return True, left >= right
+                if isinstance(op, ast.Is):
+                    return True, left is right
+                if isinstance(op, ast.IsNot):
+                    return True, left is not right
+                if isinstance(op, ast.In):
+                    return True, left in right
+                if isinstance(op, ast.NotIn):
+                    return True, left not in right
+            except (TypeError, ValueError):
+                return False, None
+        return False, None
+
+    def visit_If(self, node):
+        # Analyze the condition first, then skip branches proven unreachable.
+        self.visit(node.test)
+        known, condition = self.known_condition(node.test)
+        if known:
+            for statement in (node.body if condition else node.orelse):
+                self.visit(statement)
+            return
+        # For an unknown condition, analyze both paths independently and keep
+        # only constants that agree on both paths.
+        before = dict(self.constants)
+        for statement in node.body:
+            self.visit(statement)
+        body_constants = dict(self.constants)
+        self.constants = dict(before)
+        for statement in node.orelse:
+            self.visit(statement)
+        else_constants = dict(self.constants)
+        self.constants = {
+            name: value for name, value in body_constants.items()
+            if name in else_constants and type(value) is type(else_constants[name]) and value == else_constants[name]
+        }
+
     def visit_BinOp(self, node):
         if isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)):
             known, value = self.resolve_literal(node.right)

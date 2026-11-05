@@ -29,6 +29,8 @@ jobs:
           python-version: '3.13'
       - name: Run Python analyzer regression tests
         run: PYTHONPATH=app/src/main/python python -m unittest discover -s app/src/test/python -v
+      - name: Run compatibility regression tests
+        run: PYTHONPATH=app/src/main/python python tests/test_analyzer.py
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:

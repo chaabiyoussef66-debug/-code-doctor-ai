@@ -290,13 +290,62 @@ class Inspector(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node):
+        # Signature expressions run in the enclosing scope.
+        for decorator in node.decorator_list:
+            self.visit(decorator)
         for default in node.args.defaults:
             if isinstance(default, (ast.List, ast.Dict, ast.Set)):
                 self.add("WARNING", "قيمة افتراضية قابلة للتغيير", default,
                     "القيمة الافتراضية تُشارك بين استدعاءات الدالة.",
                     "استعمل None وأنشئ القيمة داخل الدالة.", "POTENTIAL")
-        self.generic_visit(node)
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        for arg in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
+            if arg.annotation:
+                self.visit(arg.annotation)
+        if node.args.vararg and node.args.vararg.annotation:
+            self.visit(node.args.vararg.annotation)
+        if node.args.kwarg and node.args.kwarg.annotation:
+            self.visit(node.args.kwarg.annotation)
+        if node.returns:
+            self.visit(node.returns)
+
+        outer = dict(self.constants)
+        collector = LocalBindingCollector()
+        for statement in node.body:
+            collector.visit(statement)
+        local_names = (collector.names - collector.globals - collector.nonlocals) | ScopeNameVisitor.parameters(node.args)
+        for name in local_names:
+            self.constants.pop(name, None)
+        for statement in node.body:
+            self.visit(statement)
+        self.constants = outer
+
     visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_Lambda(self, node):
+        for default in node.args.defaults + node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
+        outer = dict(self.constants)
+        for name in ScopeNameVisitor.parameters(node.args):
+            self.constants.pop(name, None)
+        self.visit(node.body)
+        self.constants = outer
+
+    def visit_ClassDef(self, node):
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        outer = dict(self.constants)
+        for statement in node.body:
+            self.visit(statement)
+        self.constants = outer
 
 class LocalBindingCollector(ast.NodeVisitor):
     """Collect bindings for a single Python scope without crossing nested scopes."""

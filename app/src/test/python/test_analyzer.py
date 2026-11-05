@@ -66,6 +66,31 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
     def test_sequence_repetition_is_valid(self):
         self.assertNotIn("تعارض أنواع البيانات", self.titles('message = "ha" * 3'))
 
+    def test_false_boolean_denominator_is_zero(self):
+        self.assertIn("قسمة على صفر", self.titles("result = 1 / False"))
+
+    def test_boolean_arithmetic_is_valid(self):
+        self.assertNotIn("تعارض أنواع البيانات", self.titles("result = True + False"))
+
+    def test_bytes_concatenation_is_valid(self):
+        self.assertNotIn("تعارض أنواع البيانات", self.titles("result = b'a' + b'b'"))
+
+    def test_string_percent_formatting_is_valid(self):
+        self.assertNotIn("تعارض أنواع البيانات", self.titles('result = "hello %s" % "world"'))
+
+    def test_complex_floor_division_is_invalid(self):
+        self.assertIn("تعارض أنواع البيانات", self.titles("result = 1j // 1j"))
+
+    def test_len_none_is_invalid(self):
+        self.assertIn("نوع غير صالح للدالة len", self.titles("result = len(None)"))
+
+    def test_sequence_string_index_is_invalid(self):
+        self.assertIn("نوع فهرس غير صالح", self.titles('items = [1, 2]\nprint(items["first"])'))
+
+    def test_missing_dictionary_key_is_reported(self):
+        self.assertIn("مفتاح غير موجود", self.titles('items = {"a": 1}\nprint(items["b"])'))
+
+
     def test_local_name_does_not_leak_between_functions(self):
         source = "def first():\n    hidden = 1\ndef second():\n    return hidden"
         self.assertTrue(self.has_name_error(source))

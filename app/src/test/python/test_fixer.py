@@ -82,7 +82,7 @@ class ConservativeFixerTests(unittest.TestCase):
         self.assertEqual(result["fixed_code"], source)
 
     def test_ambiguous_typo_is_not_changed(self):
-        source = "def show():\\n    total = 1\\n    token = 2\\n    print(tota)\\n"
+        source = "def show():\\n    total = 1\\n    tatal = 2\\n    print(tota)\\n"
         result = repair(source)
         self.assertFalse(result["can_apply"])
         self.assertEqual(result["fixed_code"], source)

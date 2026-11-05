@@ -299,13 +299,21 @@ class Inspector(ast.NodeVisitor):
     visit_AsyncFunctionDef = visit_FunctionDef
 
 class LocalBindingCollector(ast.NodeVisitor):
-    """Collect bindings for one scope without entering nested lexical scopes."""
+    """Collect bindings for a single Python scope without crossing nested scopes."""
     def __init__(self):
         self.names = set()
+        self.globals = set()
+        self.nonlocals = set()
 
     def visit_Name(self, node):
         if isinstance(node.ctx, (ast.Store, ast.Param)):
             self.names.add(node.id)
+
+    def visit_Global(self, node):
+        self.globals.update(node.names)
+
+    def visit_Nonlocal(self, node):
+        self.nonlocals.update(node.names)
 
     def visit_FunctionDef(self, node):
         self.names.add(node.name)
@@ -330,18 +338,40 @@ class LocalBindingCollector(ast.NodeVisitor):
     def visit_ExceptHandler(self, node):
         if node.name:
             self.names.add(node.name)
+        if node.type:
+            self.visit(node.type)
         for child in node.body:
             self.visit(child)
 
+    def _visit_comprehension(self, node, values):
+        # Comprehension targets belong to the comprehension's implicit scope.
+        for generator in node.generators:
+            self.visit(generator.iter)
+            for condition in generator.ifs:
+                self.visit(condition)
+        for value in values:
+            self.visit(value)
+
+    def visit_ListComp(self, node):
+        self._visit_comprehension(node, [node.elt])
+
+    def visit_SetComp(self, node):
+        self._visit_comprehension(node, [node.elt])
+
+    def visit_GeneratorExp(self, node):
+        self._visit_comprehension(node, [node.elt])
+
+    def visit_DictComp(self, node):
+        self._visit_comprehension(node, [node.key, node.value])
+
 
 class ScopeNameVisitor(ast.NodeVisitor):
-    """Conservative undefined-name checks with separate function/class scopes."""
-    last_issues = []
-
-    def __init__(self, available, local_names=None, closure_names=None):
+    """Conservative undefined-name checks respecting Python lexical scopes."""
+    def __init__(self, available, local_names=None, closure_names=None, scope_kind="module"):
         self.available = set(available)
         self.local_names = set(local_names or ())
         self.closure_names = set(closure_names or ())
+        self.scope_kind = scope_kind
         self.issues = []
 
     @staticmethod
@@ -367,7 +397,7 @@ class ScopeNameVisitor(ast.NodeVisitor):
             "عرّف الاسم قبل استعماله أو صحح كتابته أو أضف الاستيراد اللازم."
         ))
 
-    def visit_FunctionDef(self, node):
+    def _visit_function_signature(self, node):
         # Defaults, decorators and annotations execute in the enclosing scope.
         for item in node.decorator_list:
             self.visit(item)
@@ -384,14 +414,21 @@ class ScopeNameVisitor(ast.NodeVisitor):
         if node.returns:
             self.visit(node.returns)
 
+    def visit_FunctionDef(self, node):
+        self._visit_function_signature(node)
         collector = LocalBindingCollector()
         for statement in node.body:
             collector.visit(statement)
-        locals_for_function = collector.names | self.parameters(node.args)
+        parameters = self.parameters(node.args)
+        globals_bound = collector.names & collector.globals
+        locals_for_function = (collector.names - collector.globals - collector.nonlocals) | parameters
+        # A method does not close over the containing class namespace.
+        enclosing_locals = set() if self.scope_kind == "class" else self.local_names
         child = ScopeNameVisitor(
-            self.available,
+            self.available | globals_bound,
             locals_for_function,
-            self.closure_names | self.local_names
+            self.closure_names | enclosing_locals,
+            "function"
         )
         for statement in node.body:
             child.visit(statement)
@@ -403,10 +440,12 @@ class ScopeNameVisitor(ast.NodeVisitor):
         for item in node.args.defaults + node.args.kw_defaults:
             if item is not None:
                 self.visit(item)
+        enclosing_locals = set() if self.scope_kind == "class" else self.local_names
         child = ScopeNameVisitor(
             self.available,
             self.parameters(node.args),
-            self.closure_names | self.local_names
+            self.closure_names | enclosing_locals,
+            "function"
         )
         child.visit(node.body)
         self.issues.extend(child.issues)
@@ -419,14 +458,55 @@ class ScopeNameVisitor(ast.NodeVisitor):
         collector = LocalBindingCollector()
         for statement in node.body:
             collector.visit(statement)
+        class_locals = collector.names - collector.globals - collector.nonlocals
         child = ScopeNameVisitor(
-            self.available,
-            collector.names,
-            self.closure_names | self.local_names
+            self.available | (collector.names & collector.globals),
+            class_locals,
+            self.closure_names | self.local_names,
+            "class"
         )
         for statement in node.body:
             child.visit(statement)
         self.issues.extend(child.issues)
+
+    def _visit_comprehension(self, node, result_nodes):
+        if not node.generators:
+            return
+        # The first iterable is evaluated in the enclosing scope.
+        self.visit(node.generators[0].iter)
+        comp_locals = set()
+        for generator in node.generators:
+            target_collector = LocalBindingCollector()
+            target_collector.visit(generator.target)
+            comp_locals.update(target_collector.names)
+        child = ScopeNameVisitor(
+            self.available,
+            comp_locals,
+            self.closure_names | self.local_names,
+            "comprehension"
+        )
+        for index, generator in enumerate(node.generators):
+            if index:
+                child.visit(generator.iter)
+            for condition in generator.ifs:
+                child.visit(condition)
+        for result_node in result_nodes:
+            child.visit(result_node)
+        self.issues.extend(child.issues)
+
+    def visit_ListComp(self, node):
+        self._visit_comprehension(node, [node.elt])
+
+    def visit_SetComp(self, node):
+        self._visit_comprehension(node, [node.elt])
+
+    def visit_GeneratorExp(self, node):
+        self._visit_comprehension(node, [node.elt])
+
+    def visit_DictComp(self, node):
+        self._visit_comprehension(node, [node.key, node.value])
+
+
 
 def analyze(source):
     issues = []

@@ -289,6 +289,28 @@ class Inspector(ast.NodeVisitor):
                     self.add("WARNING", "subprocess مع shell=True", node,
                         "تشغيل الأوامر عبر shell=True قد يسمح بحقن أوامر إذا احتوت المدخلات على نص غير موثوق.",
                         "استعمل قائمة وسائط واجعل shell=False وتجنب دمج مدخلات المستخدم في الأمر.", "POTENTIAL")
+        if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            module = node.func.value.id
+            method = node.func.attr
+            if module == "requests" and method in ("get", "post", "put", "patch", "delete", "request"):
+                if any(keyword.arg == "verify" and isinstance(keyword.value, ast.Constant) and keyword.value.value is False for keyword in node.keywords):
+                    self.add("WARNING", "تعطيل التحقق من شهادة HTTPS", node,
+                        "verify=False يعطل التحقق من هوية خادم HTTPS ويجعل الاتصال عرضة لهجوم الوسيط.",
+                        "احذف verify=False واستعمل شهادة موثوقة أو أصلح إعداد الشهادات.", "POTENTIAL")
+            if module == "hashlib" and method in ("md5", "sha1"):
+                self.add("WARNING", "خوارزمية تجزئة ضعيفة", node,
+                    method.upper() لم تعد مناسبة لحماية كلمات المرور أو التوقيعات الأمنية الحديثة.",
+                    "استعمل خوارزمية حديثة مناسبة للغرض؛ لكلمات المرور استعمل Argon2 أو scrypt أو PBKDF2.", "POTENTIAL")
+            if module == "tempfile" and method == "mktemp":
+                self.add("WARNING", "إنشاء ملف مؤقت بطريقة غير آمنة", node,
+                    "tempfile.mktemp قد يسبب سباقاً زمنياً بين اختيار الاسم وإنشاء الملف.",
+                    "استعمل tempfile.NamedTemporaryFile أو mkstemp.", "POTENTIAL")
+        if isinstance(node.func, ast.Attribute) and node.func.attr in ("execute", "executemany") and node.args:
+            query = node.args[0]
+            if isinstance(query, ast.JoinedStr):
+                self.add("WARNING", "احتمال حقن SQL عبر f-string", node,
+                    "بناء استعلام SQL باستخدام f-string قد يدمج مدخلات مباشرة داخل الاستعلام.",
+                    "استعمل معاملات الاستعلام parameterized queries بدلاً من تركيب النص.", "POTENTIAL")
         if isinstance(node.func, ast.Name) and node.func.id == "len" and node.args:
             known, value = literal(node.args[0])
             if known and isinstance(value, (int, float, complex, bool)):

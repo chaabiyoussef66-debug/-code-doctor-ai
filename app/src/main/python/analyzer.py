@@ -367,6 +367,24 @@ class Inspector(ast.NodeVisitor):
                 self.add("WARNING", "احتمال حقن SQL عبر f-string", node,
                     "بناء استعلام SQL باستخدام f-string قد يدمج مدخلات مباشرة داخل الاستعلام.",
                     "استعمل معاملات الاستعلام parameterized queries بدلاً من تركيب النص.", "POTENTIAL")
+            elif (isinstance(query, ast.BinOp) and isinstance(query.op, ast.Add)
+                  or isinstance(query, ast.Call) and isinstance(query.func, ast.Attribute)
+                  and query.func.attr == "format"):
+                self.add("WARNING", "احتمال حقن SQL عبر تركيب النص", node,
+                    "يبدو أن استعلام SQL يُبنى بدمج النصوص أو format؛ قد يؤدي إدخال بيانات غير موثوقة إلى حقن SQL.",
+                    "استعمل معاملات الاستعلام parameterized queries ولا تدمج مدخلات المستخدم في نص SQL.", "POTENTIAL")
+        # Rendering a dynamic string as a template can interpret attacker-controlled template syntax.
+        if (isinstance(node.func, ast.Name) and node.func.id == "render_template_string"
+                and node.args and isinstance(node.args[0], (ast.JoinedStr, ast.BinOp))):
+            self.add("WARNING", "احتمال حقن قالب أو XSS", node,
+                "تمرير قالب مبني ديناميكياً إلى render_template_string قد يسمح بحقن تعليمات قالب أو محتوى غير آمن.",
+                "استعمل قالباً ثابتاً مع متغيرات، واترك escaping مفعلاً ولا تستخدم |safe مع مدخلات غير موثوقة.", "POTENTIAL")
+        # Marking dynamic content as trusted HTML bypasses normal escaping.
+        if (isinstance(node.func, ast.Name) and node.func.id == "Markup"
+                and node.args and not isinstance(node.args[0], ast.Constant)):
+            self.add("WARNING", "تعطيل تهريب HTML بمحتوى ديناميكي", node,
+                "Markup يعتبر النص HTML موثوقاً وقد يسمح بحقن HTML أو JavaScript إذا احتوى مدخلات غير موثوقة.",
+                "لا تستعمل Markup مع مدخلات المستخدم؛ دع محرك القوالب يهرب المحتوى تلقائياً.", "POTENTIAL")
         if isinstance(node.func, ast.Name) and node.func.id == "len" and node.args:
             known, value = literal(node.args[0])
             if known and (isinstance(value, (int, float, complex, bool)) or value is None):

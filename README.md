@@ -1,18 +1,33 @@
-# CODE DOCTOR AI — Phase 1
+# CODE DOCTOR AI — Android Python Analyzer
 
-Android starter app with an offline Python source analyzer embedded using Chaquopy.
+Code Doctor AI is an offline-first Android tool for reviewing Python source code. It parses source statically and never runs the submitted program.
 
-## Features
-- Paste Python code or import a text/Python file.
-- Parse source with Python's AST without executing submitted code.
-- Detect syntax errors, constant division by zero, eval/exec calls, mutable defaults, broad except, and possible hard-coded secrets.
-- Arabic explanations, line numbers, severity and suggested next steps.
+## Current capabilities
 
-## Important limitations
-This is an early rule-based analyzer, not a complete AI debugger or malware detector. A clean report means only that current rules found no match; it does not prove code correctness or security. No automatic code rewriting or cloud AI is enabled yet.
+- Paste Python code or import a local Python/text file.
+- Detect Python syntax and compile-time scope errors without executing the source.
+- Detect common definite errors such as constant division by zero, incompatible literal operations, invalid indexing and invalid `len()` calls.
+- Check undefined names with separate module, function, nested-function, class, lambda and comprehension scopes.
+- Detect likely local-variable reads before initialization and selected branch-related unbound-local cases.
+- Warn about selected risky patterns: direct `eval`/`exec`, `os.system`, `subprocess` with `shell=True`, unsafe `pickle`/`marshal` loading, unsafe `yaml.load`, and likely hard-coded secrets.
+- Explain findings in Arabic with line numbers, severity, confidence and suggested corrections.
+- Copy source and reports, export a text report, and keep the latest 10 scan records locally on the device.
 
-## Build
-GitHub Actions builds a debug APK on pushes to main or manually from Actions.
+## Privacy and safety
 
-## Next
-Add broader diagnostics, unit tests and validated fix previews; then optional cloud AI via a protected backend. Never embed API secrets in the APK.
+- Source analysis runs locally through the embedded Python runtime; source code is not uploaded to a server.
+- The analyzer parses and compiles source for validation but does not execute the submitted program.
+- The analyzer is rule-based. A clean result means only that the current checks found no issue; it is not proof that code is correct, secure, or malware-free.
+- Security warnings are indicators for review, not proof of malicious behavior.
+- Never put API keys, signing passwords or private credentials in source files or the APK.
+
+## Build and tests
+
+GitHub Actions runs the Python regression suite, compatibility checks, then builds Android APKs. The workflow can be started manually from the Actions page on the selected branch. Release signing requires the repository's existing signing secrets.
+
+## Planned improvements
+
+- More control-flow and data-flow analysis with explicit confidence levels.
+- Additional security rules and false-positive regression tests.
+- Safe fix previews that show a diff and never rewrite source without user approval.
+- Optional AI explanations through a protected backend; no secret API key will be embedded in the Android app.

@@ -309,5 +309,34 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertNotIn("الوصول إلى حقل نموذج دون تحقق", self.titles(source))
 
 
+    def test_sql_string_concatenation_is_flagged(self):
+        source = 'query = "SELECT * FROM users WHERE name = " + username\ncursor.execute(query)'
+        self.assertIn("احتمال حقن SQL عبر تركيب النص", self.titles(source))
+
+    def test_sql_format_is_flagged(self):
+        source = 'cursor.execute("SELECT * FROM users WHERE name = {}".format(username))'
+        self.assertIn("احتمال حقن SQL عبر تركيب النص", self.titles(source))
+
+    def test_render_template_string_dynamic_template_is_flagged(self):
+        source = 'from flask import render_template_string\nrender_template_string("<p>" + user_input + "</p>")'
+        self.assertIn("احتمال حقن قالب أو XSS", self.titles(source))
+
+    def test_render_template_string_static_template_is_not_flagged(self):
+        source = 'render_template_string("<p>Hello</p>", name=username)'
+        self.assertNotIn("احتمال حقن قالب أو XSS", self.titles(source))
+
+    def test_markup_dynamic_content_is_flagged(self):
+        self.assertIn("تعطيل تهريب HTML بمحتوى ديناميكي", self.titles("Markup(user_input)"))
+
+    def test_markup_static_content_is_not_flagged(self):
+        self.assertNotIn("تعطيل تهريب HTML بمحتوى ديناميكي", self.titles('Markup("<b>safe</b>")'))
+
+    def test_secret_assignment_is_flagged(self):
+        self.assertIn("احتمال وجود سر داخل الكود", self.titles('API_KEY = "123456789abcdef"'))
+
+    def test_environment_secret_is_not_flagged(self):
+        self.assertNotIn("احتمال وجود سر داخل الكود", self.titles('API_KEY = os.environ.get("API_KEY")'))
+
+
 if __name__ == "__main__":
     unittest.main()

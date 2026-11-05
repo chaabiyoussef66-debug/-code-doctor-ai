@@ -14,11 +14,11 @@ def test_division():
     assert any(x["title"] == "قسمة على صفر" for x in check("x = 4 / 0")["issues"])
 
 def test_guarded_zero_division():
-    src = "x = 0\\nif x != 0:\\n    result = 10 / x\\nelse:\\n    result = 0\\nprint(result)"
+    src = "x = 0\nif x != 0:\n    result = 10 / x\nelse:\n    result = 0\nprint(result)"
     assert not any(x["title"] == "قسمة على صفر" for x in check(src)["issues"])
 
 def test_eval():
-    assert any(x["title"] == "استعمال eval" for x in check("x = eval(data)")["issues"])
+    assert any(x["title"] == "تنفيذ ديناميكي للكود" for x in check("x = eval(data)")["issues"])
 
 def test_mutable_default():
     assert any(x["title"] == "قيمة افتراضية قابلة للتغيير" for x in check("def f(x=[]):\n return x")["issues"])

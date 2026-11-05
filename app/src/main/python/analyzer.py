@@ -579,6 +579,8 @@ def analyze(source):
             })
     try:
         tree = ast.parse(source)
+        # compile() performs syntax/scope validation only; it never executes user code.
+        compile(source, "<code-doctor-input>", "exec")
     except SyntaxError as exc:
         issues.append(issue("ERROR", "خطأ في صياغة Python", type("N", (), {"lineno": exc.lineno or 1})(),
             exc.msg or "تعذر تحليل الكود.",

@@ -50,6 +50,21 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         source = "def calculate(divisor):\n    if divisor != 0:\n        result = 100 / divisor\n        print(result)\n\ncalculate(0)"
         self.assertNotIn("قسمة على صفر", self.titles(source))
 
+    def test_zero_division_from_module_variable_argument(self):
+        source = "divisor = 0\\ndef calculate(value):\\n    result = 100 / value\\ncalculate(divisor)"
+        result = scan(source)
+        item = next(x for x in result["issues"] if x["title"] == "قسمة على صفر")
+        self.assertEqual(item["line"], 3)
+        self.assertEqual(item["confidence"], "CONFIRMED")
+
+    def test_nonzero_module_variable_argument_is_safe(self):
+        source = "divisor = 5\\ndef calculate(value):\\n    result = 100 / value\\ncalculate(divisor)"
+        self.assertNotIn("قسمة على صفر", self.titles(source))
+
+    def test_module_variable_alias_is_resolved_for_function_call(self):
+        source = "base = 0\\ndivisor = base\\ndef calculate(value):\\n    return 10 / value\\ncalculate(divisor)"
+        self.assertIn("قسمة على صفر", self.titles(source))
+
     def test_constant_index_out_of_range(self):
         self.assertIn("فهرس خارج الحدود", self.titles("items = [1, 2]\nprint(items[5])"))
 

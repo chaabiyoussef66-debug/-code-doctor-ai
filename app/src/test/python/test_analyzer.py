@@ -114,21 +114,21 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
 
 
     def test_nonlocal_without_enclosing_binding_is_syntax_error(self):
-        source = "def outer():\\n    def inner():\\n        nonlocal missing\\n        return missing"
+        source = "def outer():\n    def inner():\n        nonlocal missing\n        return missing"
         self.assertEqual(scan(source)["status"], "SYNTAX_ERROR")
 
     def test_return_outside_function_is_syntax_error(self):
         self.assertEqual(scan("return 5")["status"], "SYNTAX_ERROR")
 
     def test_function_constant_does_not_leak_into_another_function(self):
-        source = "def first():\\n    denominator = 0\\n    return 10 / denominator\\ndef second(denominator):\\n    return 10 / denominator"
+        source = "def first():\n    denominator = 0\n    return 10 / denominator\ndef second(denominator):\n    return 10 / denominator"
         result = scan(source)
         zero_divisions = [x for x in result["issues"] if x["title"] == "قسمة على صفر"]
         self.assertEqual(len(zero_divisions), 1)
         self.assertEqual(zero_divisions[0]["line"], 3)
 
     def test_method_does_not_inherit_class_constant_for_division(self):
-        source = "class Sample:\\n    denominator = 0\\n    def calculate(self, denominator):\\n        return 10 / denominator"
+        source = "class Sample:\n    denominator = 0\n    def calculate(self, denominator):\n        return 10 / denominator"
         self.assertNotIn("قسمة على صفر", self.titles(source))
 
     def test_syntax_error_preserved(self):

@@ -293,6 +293,33 @@ class Inspector(ast.NodeVisitor):
                 "استعمل نوع بيانات قابلاً للفهرسة أو غيّر طريقة الوصول.")
         self.generic_visit(node)
 
+    def visit_Compare(self, node):
+        # A literal compared with a variable named like a credential is a
+        # likely hard-coded password check, not proof of exploitability.
+        credential_names = {"password", "passwd", "passcode", "secret"}
+        left = node.left
+        if isinstance(left, ast.Name) and left.id.lower() in credential_names:
+            if any(isinstance(op, (ast.Eq, ast.Is)) and isinstance(value, ast.Constant)
+                   and isinstance(value.value, str) and value.value
+                   for op, value in zip(node.ops, node.comparators)):
+                self.add("WARNING", "كلمة مرور ثابتة داخل الكود", node,
+                    "تتم مقارنة كلمة المرور بقيمة نصية مكتوبة مباشرة داخل المصدر؛ يمكن استخراجها من الكود.",
+                    "استعمل تخزيناً آمناً لكلمات المرور والتحقق منها باستخدام تجزئة مخصصة لكلمات المرور.", "POTENTIAL")
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node):
+        # request.form["field"] raises BadRequestKeyError when the field is absent.
+        if (isinstance(node.value, ast.Attribute)
+                and isinstance(node.value.value, ast.Name)
+                and node.value.value.id == "request"
+                and node.value.attr == "form"
+                and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)):
+            self.add("WARNING", "الوصول إلى حقل نموذج دون تحقق", node,
+                "الوصول المباشر إلى request.form بمفتاح ثابت قد يفشل إذا لم يرسل المستخدم هذا الحقل.",
+                "تحقق من وجود الحقل أو استعمل get() مع التحقق من القيمة قبل استخدامها.", "POTENTIAL")
+        self.generic_visit(node)
+
     def visit_Call(self, node):
         if isinstance(node.func, ast.Name) and node.func.id in ("eval", "exec"):
             self.add("WARNING", "تنفيذ ديناميكي للكود", node,
@@ -301,6 +328,13 @@ class Inspector(ast.NodeVisitor):
         if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
             module = node.func.value.id
             method = node.func.attr
+            if method == "run" and any(
+                keyword.arg == "debug" and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value is True for keyword in node.keywords
+            ):
+                self.add("WARNING", "تفعيل Flask Debug", node,
+                    "تشغيل خادم Flask مع debug=True قد يكشف معلومات حساسة، ويكون خطيراً إذا أتيح الخادم لأشخاص غير موثوقين.",
+                    "عطّل debug في بيئة الإنتاج، ولا تعرض خادم التطوير للإنترنت.", "POTENTIAL")
             if module == "os" and method == "system":
                 self.add("WARNING", "استدعاء أوامر النظام", node,
                     "os.system يشغل أمراً عبر مفسر الأوامر وقد يفتح باب حقن الأوامر.",

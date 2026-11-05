@@ -299,7 +299,7 @@ class Inspector(ast.NodeVisitor):
                         "احذف verify=False واستعمل شهادة موثوقة أو أصلح إعداد الشهادات.", "POTENTIAL")
             if module == "hashlib" and method in ("md5", "sha1"):
                 self.add("WARNING", "خوارزمية تجزئة ضعيفة", node,
-                    method.upper() لم تعد مناسبة لحماية كلمات المرور أو التوقيعات الأمنية الحديثة.",
+                    "الخوارزمية " + method.upper() + " لم تعد مناسبة لحماية كلمات المرور أو التوقيعات الأمنية الحديثة."",
                     "استعمل خوارزمية حديثة مناسبة للغرض؛ لكلمات المرور استعمل Argon2 أو scrypt أو PBKDF2.", "POTENTIAL")
             if module == "tempfile" and method == "mktemp":
                 self.add("WARNING", "إنشاء ملف مؤقت بطريقة غير آمنة", node,

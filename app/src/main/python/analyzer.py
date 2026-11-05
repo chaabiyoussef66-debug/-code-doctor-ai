@@ -126,6 +126,7 @@ class Inspector(ast.NodeVisitor):
         self.constants = {}
         self.function_depth = 0
         self.class_scope_stack = []
+        self.dynamic_sql_names = set()
 
     def add(self, severity, title, node, message, suggestion, confidence="CONFIRMED"):
         self.issues.append(issue(severity, title, node, message, suggestion, confidence))
@@ -140,6 +141,14 @@ class Inspector(ast.NodeVisitor):
 
     def visit_Assign(self, node):
         self.visit(node.value)
+        if self.is_dynamic_sql(node.value):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.dynamic_sql_names.add(target.id)
+        else:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.dynamic_sql_names.discard(target.id)
         known, value = self.resolve_literal(node.value)
         for target in node.targets:
             if isinstance(target, ast.Name):
@@ -317,6 +326,22 @@ class Inspector(ast.NodeVisitor):
                     "استعمل تخزيناً آمناً لكلمات المرور والتحقق منها باستخدام تجزئة مخصصة لكلمات المرور.", "POTENTIAL")
         self.generic_visit(node)
 
+    def is_dynamic_sql(self, node):
+        """Recognize dynamic SQL only when a SQL statement literal is present."""
+        sql_pattern = re.compile(r"(?i)\b(select|insert|update|delete|replace)\b")
+        if isinstance(node, ast.Name):
+            return node.id in self.dynamic_sql_names
+        if isinstance(node, ast.JoinedStr):
+            return any(isinstance(part, ast.Constant) and isinstance(part.value, str)
+                       and sql_pattern.search(part.value) for part in node.values)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return self.is_dynamic_sql(node.left) or self.is_dynamic_sql(node.right) or any(
+                isinstance(part, ast.Constant) and isinstance(part.value, str)
+                and sql_pattern.search(part.value) for part in ast.walk(node))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
+            return self.is_dynamic_sql(node.func.value)
+        return False
+
     def visit_Call(self, node):
         if isinstance(node.func, ast.Name) and node.func.id in ("eval", "exec"):
             self.add("WARNING", "تنفيذ ديناميكي للكود", node,
@@ -363,13 +388,11 @@ class Inspector(ast.NodeVisitor):
                     "استعمل tempfile.NamedTemporaryFile أو mkstemp.", "POTENTIAL")
         if isinstance(node.func, ast.Attribute) and node.func.attr in ("execute", "executemany") and node.args:
             query = node.args[0]
-            if isinstance(query, ast.JoinedStr):
+            if isinstance(query, ast.JoinedStr) and self.is_dynamic_sql(query):
                 self.add("WARNING", "احتمال حقن SQL عبر f-string", node,
                     "بناء استعلام SQL باستخدام f-string قد يدمج مدخلات مباشرة داخل الاستعلام.",
                     "استعمل معاملات الاستعلام parameterized queries بدلاً من تركيب النص.", "POTENTIAL")
-            elif (isinstance(query, ast.BinOp) and isinstance(query.op, ast.Add)
-                  or isinstance(query, ast.Call) and isinstance(query.func, ast.Attribute)
-                  and query.func.attr == "format"):
+            elif self.is_dynamic_sql(query):
                 self.add("WARNING", "احتمال حقن SQL عبر تركيب النص", node,
                     "يبدو أن استعلام SQL يُبنى بدمج النصوص أو format؛ قد يؤدي إدخال بيانات غير موثوقة إلى حقن SQL.",
                     "استعمل معاملات الاستعلام parameterized queries ولا تدمج مدخلات المستخدم في نص SQL.", "POTENTIAL")

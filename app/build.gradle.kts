@@ -27,6 +27,11 @@ android {
         }
     }
     buildTypes {
+        getByName("debug") {
+            // Keep the test build separate from the installed stable app.
+            // This avoids signature-update conflicts and preserves the old app/data.
+            applicationIdSuffix = ".debug"
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false

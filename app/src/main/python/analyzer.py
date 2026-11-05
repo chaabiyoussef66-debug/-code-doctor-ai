@@ -331,6 +331,8 @@ class Inspector(ast.NodeVisitor):
         sql_pattern = re.compile(r"(?i)\b(select|insert|update|delete|replace)\b")
         if isinstance(node, ast.Name):
             return node.id in self.dynamic_sql_names
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return bool(sql_pattern.search(node.value))
         if isinstance(node, ast.JoinedStr):
             return any(isinstance(part, ast.Constant) and isinstance(part.value, str)
                        and sql_pattern.search(part.value) for part in node.values)

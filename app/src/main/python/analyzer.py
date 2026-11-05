@@ -644,6 +644,15 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         for default in node.args.defaults + node.args.kw_defaults:
             if default is not None:
                 self.visit(default)
+        for arg in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
+            if arg.annotation:
+                self.visit(arg.annotation)
+        if node.args.vararg and node.args.vararg.annotation:
+            self.visit(node.args.vararg.annotation)
+        if node.args.kwarg and node.args.kwarg.annotation:
+            self.visit(node.args.kwarg.annotation)
+        if node.returns:
+            self.visit(node.returns)
         self.assigned.add(node.name)
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -803,6 +812,11 @@ class ScopeNameVisitor(ast.NodeVisitor):
             child.visit(statement)
         self.issues.extend(child.issues)
 
+        class_checker = LocalReadBeforeWriteVisitor(class_locals, set(dir(builtins)))
+        for statement in node.body:
+            class_checker.visit(statement)
+        self.issues.extend(class_checker.issues)
+
     def _visit_comprehension(self, node, result_nodes):
         if not node.generators:
             return
@@ -874,6 +888,11 @@ def analyze(source):
     name_checker = ScopeNameVisitor(module_names, module_collector.names)
     name_checker.visit(tree)
     issues.extend(name_checker.issues)
+
+    module_checker = LocalReadBeforeWriteVisitor(module_collector.names, set(dir(builtins)))
+    for statement in tree.body:
+        module_checker.visit(statement)
+    issues.extend(module_checker.issues)
 
     order = {"CRITICAL": 0, "ERROR": 1, "WARNING": 2, "INFO": 3}
     # Remove duplicate reports for the same NameError location.

@@ -269,16 +269,26 @@ class Inspector(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node):
-        name = node.func.id if isinstance(node.func, ast.Name) else (node.func.attr if isinstance(node.func, ast.Attribute) else None)
-        warnings = {
-            "eval": ("استعمال eval", "قد ينفذ تعبيراً غير موثوق.", "تجنب eval واستعمل parsing آمناً."),
-            "exec": ("استعمال exec", "قد ينفذ نصاً كتعليمات Python.", "تجنب exec ولا تمرر إليه مدخلات غير موثوقة."),
-            "system": ("استدعاء system", "أوامر النظام تحتاج مراجعة المدخلات.", "تجنب shell مع نصوص غير موثوقة."),
-            "loads": ("فك تسلسل بيانات", "بعض دوال loads مثل pickle قد تكون خطيرة مع بيانات غير موثوقة.", "استعمل تنسيقاً آمناً مثل JSON عند الإمكان.")
-        }
-        if name in warnings:
-            title, msg, fix = warnings[name]
-            self.add("WARNING", title, node, msg, fix, "POTENTIAL")
+        if isinstance(node.func, ast.Name) and node.func.id in ("eval", "exec"):
+            self.add("WARNING", "تنفيذ ديناميكي للكود", node,
+                "الدالة " + node.func.id + " تنفذ تعبيراً أو تعليمات مولدة وقت التشغيل؛ قد تكون خطيرة مع مدخلات غير موثوقة.",
+                "تجنب التنفيذ الديناميكي أو تحقق من المصدر والمدخلات بدقة.", "POTENTIAL")
+        if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            module = node.func.value.id
+            method = node.func.attr
+            if module == "os" and method == "system":
+                self.add("WARNING", "استدعاء أوامر النظام", node,
+                    "os.system يشغل أمراً عبر مفسر الأوامر وقد يفتح باب حقن الأوامر.",
+                    "استعمل واجهات subprocess بوسائط منفصلة وتجنب shell=True.", "POTENTIAL")
+            if module in ("pickle", "marshal") and method in ("load", "loads"):
+                self.add("WARNING", "فك تسلسل غير آمن", node,
+                    "فك بيانات pickle أو marshal من مصدر غير موثوق قد يؤدي إلى تنفيذ تعليمات خطيرة.",
+                    "لا تفك هذه الصيغ من مصادر غير موثوقة؛ فضّل JSON للبيانات البسيطة.", "POTENTIAL")
+            if module == "subprocess" and method in ("run", "Popen", "call", "check_call", "check_output"):
+                if any(keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True for keyword in node.keywords):
+                    self.add("WARNING", "subprocess مع shell=True", node,
+                        "تشغيل الأوامر عبر shell=True قد يسمح بحقن أوامر إذا احتوت المدخلات على نص غير موثوق.",
+                        "استعمل قائمة وسائط واجعل shell=False وتجنب دمج مدخلات المستخدم في الأمر.", "POTENTIAL")
         if isinstance(node.func, ast.Name) and node.func.id == "len" and node.args:
             known, value = literal(node.args[0])
             if known and isinstance(value, (int, float, complex, bool)):

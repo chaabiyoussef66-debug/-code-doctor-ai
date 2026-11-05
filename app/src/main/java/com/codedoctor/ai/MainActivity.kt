@@ -126,6 +126,11 @@ class MainActivity : ComponentActivity() {
             text = "افحص الكود الآن"
             setOnClickListener { analyzeCode() }
         }, wrap())
+
+        page.addView(Button(this).apply {
+            text = "اقترح إصلاح الكود"
+            setOnClickListener { suggestFix() }
+        }, wrap())
         output = TextView(this).apply {
             text = "نتائج الفحص ستظهر هنا."
             textSize = 14f
@@ -237,6 +242,40 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             output.text = "وقع خطأ أثناء التحليل:\n" + e.message
             copyButton.isEnabled = true
+        }
+    }
+
+    private fun suggestFix() {
+        val source = editor.text.toString()
+        if (source.isBlank()) {
+            Toast.makeText(this, "أدخل كوداً أولاً.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val raw = Python.getInstance().getModule("fixer").callAttr("fix_code", source).toString()
+            val result = JSONObject(raw)
+            if (!result.optBoolean("can_apply", false)) {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("اقتراح الإصلاح")
+                    .setMessage(result.optString("message"))
+                    .setPositiveButton("حسناً", null)
+                    .show()
+                return
+            }
+            val fixed = result.optString("fixed_code", source)
+            android.app.AlertDialog.Builder(this)
+                .setTitle("معاينة الكود المصحح")
+                .setMessage(result.optString("message") + "\n\n" + fixed)
+                .setPositiveButton("تطبيق") { _, _ -> editor.setText(fixed) }
+                .setNeutralButton("نسخ") { _, _ ->
+                    val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("Fixed code", fixed))
+                    Toast.makeText(this, "تم نسخ الكود", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("إغلاق", null)
+                .show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "تعذر اقتراح الإصلاح: " + e.message, Toast.LENGTH_LONG).show()
         }
     }
 

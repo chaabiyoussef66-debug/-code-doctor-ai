@@ -264,6 +264,16 @@ class Inspector(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Subscript(self, node):
+        # request.form["field"] raises BadRequestKeyError when the field is absent.
+        if (isinstance(node.value, ast.Attribute)
+                and isinstance(node.value.value, ast.Name)
+                and node.value.value.id == "request"
+                and node.value.attr == "form"
+                and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)):
+            self.add("WARNING", "الوصول إلى حقل نموذج دون تحقق", node,
+                "الوصول المباشر إلى request.form بمفتاح ثابت قد يفشل إذا لم يرسل المستخدم هذا الحقل.",
+                "تحقق من وجود الحقل أو استعمل get() مع التحقق من القيمة قبل استخدامها.", "POTENTIAL")
         known, value = self.resolve_literal(node.value)
         index_known, index = self.resolve_literal(node.slice)
         if known and index_known and isinstance(value, (list, tuple, str, bytes)):
@@ -305,19 +315,6 @@ class Inspector(ast.NodeVisitor):
                 self.add("WARNING", "كلمة مرور ثابتة داخل الكود", node,
                     "تتم مقارنة كلمة المرور بقيمة نصية مكتوبة مباشرة داخل المصدر؛ يمكن استخراجها من الكود.",
                     "استعمل تخزيناً آمناً لكلمات المرور والتحقق منها باستخدام تجزئة مخصصة لكلمات المرور.", "POTENTIAL")
-        self.generic_visit(node)
-
-    def visit_Subscript(self, node):
-        # request.form["field"] raises BadRequestKeyError when the field is absent.
-        if (isinstance(node.value, ast.Attribute)
-                and isinstance(node.value.value, ast.Name)
-                and node.value.value.id == "request"
-                and node.value.attr == "form"
-                and isinstance(node.slice, ast.Constant)
-                and isinstance(node.slice.value, str)):
-            self.add("WARNING", "الوصول إلى حقل نموذج دون تحقق", node,
-                "الوصول المباشر إلى request.form بمفتاح ثابت قد يفشل إذا لم يرسل المستخدم هذا الحقل.",
-                "تحقق من وجود الحقل أو استعمل get() مع التحقق من القيمة قبل استخدامها.", "POTENTIAL")
         self.generic_visit(node)
 
     def visit_Call(self, node):

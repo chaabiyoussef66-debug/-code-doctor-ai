@@ -87,6 +87,10 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
     def test_comprehension_can_read_enclosing_function_local(self):
         source = "def build(items):\n    factor = 2\n    return [item * factor for item in items]"
         self.assertFalse(self.has_name_error(source))
+    def test_later_comprehension_target_is_not_visible_in_its_iterable(self):
+        source = "items = [1, 2]\nresult = [x for x in items for y in missing_iterable]"
+        self.assertTrue(self.has_name_error(source))
+
 
     def test_comprehension_does_not_capture_class_local(self):
         source = "class Sample:\n    value = 4\n    result = [value for _ in range(1)]"

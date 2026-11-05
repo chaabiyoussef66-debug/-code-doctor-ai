@@ -437,24 +437,52 @@ class Inspector(ast.NodeVisitor):
 
 
 def analyze_known_function_calls(tree):
-    """Analyze direct calls with statically known literal arguments, without executing code."""
+    """Analyze direct calls using safe literal arguments and preceding module constants."""
     functions = {
         node.name: node for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
+
+    def module_constants_before(line):
+        constants = {}
+        for statement in tree.body:
+            if getattr(statement, "lineno", 0) >= line:
+                break
+            if isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                value_node = statement.value
+                known, value = literal(value_node) if value_node is not None else (False, None)
+                if not known and isinstance(value_node, ast.Name) and value_node.id in constants:
+                    known, value = True, constants[value_node.id]
+                targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        if known:
+                            constants[target.id] = value
+                        else:
+                            constants.pop(target.id, None)
+        return constants
+
     found = []
     for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
         function = functions.get(call.func.id)
         if function is None:
             continue
+        available = module_constants_before(getattr(call, "lineno", 0))
         positional = function.args.posonlyargs + function.args.args
         keyword_only = function.args.kwonlyargs
         if len(call.args) > len(positional) and function.args.vararg is None:
             continue
         bound = {}
         valid = True
-        for parameter, argument in zip(positional, call.args):
+
+        def resolve_argument(argument):
             known, value = literal(argument)
+            if not known and isinstance(argument, ast.Name) and argument.id in available:
+                return True, available[argument.id]
+            return known, value
+
+        for parameter, argument in zip(positional, call.args):
+            known, value = resolve_argument(argument)
             if not known:
                 valid = False
                 break
@@ -465,7 +493,7 @@ def analyze_known_function_calls(tree):
             if keyword.arg is None:
                 valid = False
                 break
-            known, value = literal(keyword.value)
+            known, value = resolve_argument(keyword.value)
             if not known or keyword.arg in bound:
                 valid = False
                 break

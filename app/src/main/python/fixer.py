@@ -205,7 +205,12 @@ def _replace_name_at_node(source, node, replacement):
 
 def fix_code(source):
     """Return a preview of a conservative repair; never run source code."""
-    # Prefer narrow Flask security repairs before the existing generic repairs.\n    from security_fixer import fix_flask_security\n    security_result = fix_flask_security(source)\n    if security_result is not None:\n        return security_result\n    try:
+    # Prefer narrow Flask security repairs before the existing generic repairs.
+    from security_fixer import fix_flask_security
+    security_result = fix_flask_security(source)
+    if security_result is not None:
+        return security_result
+    try:
         tree = ast.parse(source)
     except SyntaxError as exc:
         return json.dumps({

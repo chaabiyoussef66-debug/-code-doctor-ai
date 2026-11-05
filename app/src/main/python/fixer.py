@@ -13,6 +13,8 @@ class _DirectNames(ast.NodeVisitor):
     def __init__(self):
         self.loads = set()
         self.stores = set()
+        self.globals = set()
+        self.nonlocals = set()
 
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
@@ -30,6 +32,12 @@ class _DirectNames(ast.NodeVisitor):
 
     def visit_Lambda(self, node):
         return
+
+    def visit_Global(self, node):
+        self.globals.update(node.names)
+
+    def visit_Nonlocal(self, node):
+        self.nonlocals.update(node.names)
 
 
 def _simple_constant_assignment(statement):
@@ -51,9 +59,23 @@ def _find_safe_reorder(tree):
     ]
     for function in functions:
         body = function.body
+        args = function.args
+        parameters = {
+            arg.arg for arg in
+            args.posonlyargs + args.args + args.kwonlyargs
+        }
+        if args.vararg:
+            parameters.add(args.vararg.arg)
+        if args.kwarg:
+            parameters.add(args.kwarg.arg)
+        declarations = _DirectNames()
+        for item in body:
+            declarations.visit(item)
         for write_index, statement in enumerate(body):
             name = _simple_constant_assignment(statement)
-            if not name:
+            if not name or name in parameters:
+                continue
+            if name in declarations.globals or name in declarations.nonlocals:
                 continue
             # Do not move an assignment past any earlier write to this name.
             prior_write = False

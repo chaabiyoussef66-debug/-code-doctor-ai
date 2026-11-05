@@ -28,6 +28,18 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         result = scan("tax_rate = 0.2\ntotal = 100 * tax_rate\nprint(total)")
         self.assertNotIn("اسم أو متغير غير معرّف", self.titles("tax_rate = 0.2\ntotal = 100 * tax_rate\nprint(total)"))
 
+    def test_function_arguments_are_not_undefined(self):
+        titles = self.titles("def divide(a, b):\n    return a / b")
+        self.assertNotIn("اسم أو متغير غير معرّف", titles)
+
+    def test_undefined_name_inside_function(self):
+        titles = self.titles("def calculate():\n    return missing_value")
+        self.assertIn("اسم أو متغير غير معرّف", titles)
+
+    def test_sequence_repetition_is_valid(self):
+        titles = self.titles('message = "ha" * 3')
+        self.assertNotIn("تعارض أنواع البيانات", titles)
+
     def test_syntax_error_preserved(self):
         self.assertEqual(scan("def broken(:")["status"], "SYNTAX_ERROR")
 

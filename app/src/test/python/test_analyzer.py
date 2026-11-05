@@ -93,6 +93,11 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         source = "def build(items):\n    result = [item for item in items]\n    return item"
         self.assertTrue(self.has_name_error(source))
 
+    def test_comprehension_target_does_not_trigger_local_unbound_warning(self):
+        source = "def build(items):\n    result = [item for item in items]\n    item = 4\n    return result"
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+
     def test_comprehension_target_is_available_inside_comprehension(self):
         source = "items = [1, 2, 3]\nsquares = [item * item for item in items]"
         self.assertFalse(self.has_name_error(source))

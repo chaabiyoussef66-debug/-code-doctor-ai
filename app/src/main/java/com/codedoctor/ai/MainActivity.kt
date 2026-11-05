@@ -108,11 +108,11 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        editorActions.addView(Button(this).apply {
+        editorActions.addView(Button(this@MainActivity).apply {
             text = "مسح الكود"
             setOnClickListener { editor.setText("") }
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        editorActions.addView(Button(this).apply {
+        editorActions.addView(Button(this@MainActivity).apply {
             text = "نسخ الكود"
             setOnClickListener {
                 val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
@@ -140,7 +140,7 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        copyButton = Button(this).apply {
+        copyButton = Button(this@MainActivity).apply {
             text = "نسخ التقرير"
             isEnabled = false
             setOnClickListener {
@@ -149,7 +149,7 @@ class MainActivity : ComponentActivity() {
                 Toast.makeText(this@MainActivity, "تم نسخ التقرير", Toast.LENGTH_SHORT).show()
             }
         }
-        exportButton = Button(this).apply {
+        exportButton = Button(this@MainActivity).apply {
             text = "حفظ التقرير"
             isEnabled = false
             setOnClickListener { reportSaver.launch("code-doctor-report.txt") }

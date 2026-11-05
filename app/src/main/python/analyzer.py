@@ -115,6 +115,8 @@ class Inspector(ast.NodeVisitor):
     def __init__(self):
         self.issues = []
         self.constants = {}
+        self.function_depth = 0
+        self.class_scope_stack = []
 
     def add(self, severity, title, node, message, suggestion, confidence="CONFIRMED"):
         self.issues.append(issue(severity, title, node, message, suggestion, confidence))
@@ -312,15 +314,20 @@ class Inspector(ast.NodeVisitor):
         if node.returns:
             self.visit(node.returns)
 
-        outer = dict(self.constants)
+        if self.class_scope_stack and self.function_depth == self.class_scope_stack[-1][1]:
+            outer = dict(self.class_scope_stack[-1][0])
+        else:
+            outer = dict(self.constants)
         collector = LocalBindingCollector()
         for statement in node.body:
             collector.visit(statement)
         local_names = (collector.names - collector.globals - collector.nonlocals) | ScopeNameVisitor.parameters(node.args)
         for name in local_names:
             self.constants.pop(name, None)
+        self.function_depth += 1
         for statement in node.body:
             self.visit(statement)
+        self.function_depth -= 1
         self.constants = outer
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -343,8 +350,10 @@ class Inspector(ast.NodeVisitor):
         for keyword in node.keywords:
             self.visit(keyword.value)
         outer = dict(self.constants)
+        self.class_scope_stack.append((outer, self.function_depth))
         for statement in node.body:
             self.visit(statement)
+        self.class_scope_stack.pop()
         self.constants = outer
 
 class LocalBindingCollector(ast.NodeVisitor):

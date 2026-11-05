@@ -288,5 +288,26 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertEqual(scan("def broken(:")["status"], "SYNTAX_ERROR")
 
 
+    def test_hardcoded_password_comparison_is_flagged(self):
+        source = 'password = request.form["password"]\\nif password == "1234":\\n    login()'
+        self.assertIn("كلمة مرور ثابتة داخل الكود", self.titles(source))
+
+    def test_flask_debug_true_is_flagged(self):
+        source = "from flask import Flask\\napp = Flask(__name__)\\napp.run(debug=True)"
+        self.assertIn("تفعيل Flask Debug", self.titles(source))
+
+    def test_flask_debug_false_is_not_flagged(self):
+        source = "app.run(debug=False)"
+        self.assertNotIn("تفعيل Flask Debug", self.titles(source))
+
+    def test_direct_request_form_key_access_is_flagged(self):
+        source = 'username = request.form["username"]'
+        self.assertIn("الوصول إلى حقل نموذج دون تحقق", self.titles(source))
+
+    def test_request_form_get_is_not_flagged_as_direct_access(self):
+        source = 'username = request.form.get("username")'
+        self.assertNotIn("الوصول إلى حقل نموذج دون تحقق", self.titles(source))
+
+
 if __name__ == "__main__":
     unittest.main()

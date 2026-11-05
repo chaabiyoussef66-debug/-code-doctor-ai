@@ -376,12 +376,17 @@ class Inspector(ast.NodeVisitor):
             self.visit(base)
         for keyword in node.keywords:
             self.visit(keyword.value)
-        outer = dict(self.constants)
+        restore_constants = dict(self.constants)
+        if self.class_scope_stack and self.function_depth == self.class_scope_stack[-1][1]:
+            outer = dict(self.class_scope_stack[-1][0])
+        else:
+            outer = dict(restore_constants)
+        self.constants = dict(outer)
         self.class_scope_stack.append((outer, self.function_depth))
         for statement in node.body:
             self.visit(statement)
         self.class_scope_stack.pop()
-        self.constants = outer
+        self.constants = restore_constants
 
 class LocalBindingCollector(ast.NodeVisitor):
     """Collect bindings for a single Python scope without crossing nested scopes."""
@@ -740,10 +745,11 @@ class ScopeNameVisitor(ast.NodeVisitor):
         for statement in node.body:
             collector.visit(statement)
         class_locals = collector.names - collector.globals - collector.nonlocals
+        enclosing_locals = set() if self.scope_kind == "class" else self.local_names
         child = ScopeNameVisitor(
             self.available | (collector.names & collector.globals),
             class_locals,
-            self.closure_names | self.local_names,
+            self.closure_names | enclosing_locals,
             "class"
         )
         for statement in node.body:

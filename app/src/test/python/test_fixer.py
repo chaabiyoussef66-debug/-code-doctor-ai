@@ -36,6 +36,18 @@ class ConservativeFixerTests(unittest.TestCase):
         self.assertFalse(result["can_apply"])
         self.assertEqual(result["fixed_code"], source)
 
+    def test_does_not_reorder_a_function_parameter(self):
+        source = "def calculate(total):\n    print(total)\n    total = 100\n"
+        result = repair(source)
+        self.assertFalse(result["can_apply"])
+        self.assertEqual(result["fixed_code"], source)
+
+    def test_does_not_reorder_a_global_name(self):
+        source = "def calculate():\n    global total\n    print(total)\n    total = 100\n"
+        result = repair(source)
+        self.assertFalse(result["can_apply"])
+        self.assertEqual(result["fixed_code"], source)
+
     def test_syntax_error_is_never_rewritten(self):
         source = "def broken(:\n    pass\n"
         result = repair(source)

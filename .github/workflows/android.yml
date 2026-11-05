@@ -7,7 +7,7 @@ permissions:
 on:
   workflow_dispatch:
   push:
-    branches: [ main, ast-scope-analysis, smart-nameerror-fix ]
+    branches: [ main, ast-scope-analysis, smart-nameerror-fix, security-autofix-preview ]
 
 jobs:
   build:

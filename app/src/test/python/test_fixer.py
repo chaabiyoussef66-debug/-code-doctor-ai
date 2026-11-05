@@ -54,6 +54,46 @@ class ConservativeFixerTests(unittest.TestCase):
         self.assertFalse(result["can_apply"])
         self.assertEqual(result["fixed_code"], source)
 
+
+    def test_suggests_clear_local_name_typo(self):
+        source = "def calculate():\n    total = 100\n    print(totla)\n"
+        result = repair(source)
+        self.assertTrue(result["can_apply"])
+        self.assertIn("print(total)", result["fixed_code"])
+        self.assertNotIn("print(totla)", result["fixed_code"])
+        compile(result["fixed_code"], "<fixed>", "exec")
+
+    def test_suggests_clear_builtin_typo(self):
+        source = "def show():\n    pritn('hello')\n"
+        result = repair(source)
+        self.assertTrue(result["can_apply"])
+        self.assertIn("print('hello')", result["fixed_code"])
+
+    def test_does_not_guess_when_no_similar_name_exists(self):
+        source = "def show():\n    print(missing_value)\n"
+        result = repair(source)
+        self.assertFalse(result["can_apply"])
+        self.assertEqual(result["fixed_code"], source)
+
+    def test_does_not_change_valid_builtin(self):
+        source = "def show():\n    print('hello')\n"
+        result = repair(source)
+        self.assertFalse(result["can_apply"])
+        self.assertEqual(result["fixed_code"], source)
+
+    def test_ambiguous_typo_is_not_changed(self):
+        source = "def show():\n    total = 1\n    tota1 = 2\n    print(tota)\n"
+        result = repair(source)
+        self.assertFalse(result["can_apply"])
+        self.assertEqual(result["fixed_code"], source)
+
+    def test_typo_fix_is_preview_only_and_does_not_execute(self):
+        source = "def show():\n    total = 1\n    print(totla)\n"
+        result = repair(source)
+        self.assertTrue(result["can_apply"])
+        self.assertIn("totla", source)
+        self.assertIn("total", result["fixed_code"])
+
     def test_does_not_move_across_control_flow(self):
         source = "def calculate(flag):\n    print(total)\n    if flag:\n        pass\n    total = 100\n"
         result = repair(source)

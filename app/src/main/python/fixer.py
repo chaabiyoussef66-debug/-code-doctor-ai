@@ -114,6 +114,95 @@ def _DirectNamesFor(node):
     return visitor
 
 
+
+class _DirectLoadNodes(_DirectNames):
+    def __init__(self):
+        super().__init__()
+        self.nodes = []
+
+    def visit_Name(self, node):
+        super().visit_Name(node)
+        if isinstance(node.ctx, ast.Load):
+            self.nodes.append(node)
+
+
+def _find_safe_name_typo(tree):
+    """Find one unambiguous misspelled local/builtin name in a function."""
+    import builtins
+    from difflib import SequenceMatcher
+
+    def similarity(left, right):
+        if len(left) == len(right):
+            differences = [i for i, (a, b) in enumerate(zip(left, right)) if a != b]
+            if (len(differences) == 2
+                    and differences[1] == differences[0] + 1
+                    and left[differences[0]] == right[differences[1]]
+                    and left[differences[1]] == right[differences[0]]):
+                # Treat one adjacent transposition as a likely typing slip.
+                return 0.90
+        return SequenceMatcher(None, left, right).ratio()
+
+    matches = []
+    for function in ast.walk(tree):
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        visitor = _DirectNames()
+        for statement in function.body:
+            visitor.visit(statement)
+        args = function.args
+        parameters = {
+            arg.arg for arg in
+            args.posonlyargs + args.args + args.kwonlyargs
+        }
+        if args.vararg:
+            parameters.add(args.vararg.arg)
+        if args.kwarg:
+            parameters.add(args.kwarg.arg)
+        if visitor.globals or visitor.nonlocals:
+            # Avoid guessing across explicit scope declarations.
+            continue
+        candidates = (visitor.stores | parameters | set(dir(builtins)))
+        loads = _DirectLoadNodes()
+        for statement in function.body:
+            loads.visit(statement)
+        for node in loads.nodes:
+                if node.id in candidates or len(node.id) < 3:
+                    continue
+                scored = sorted(
+                    ((similarity(node.id, name), name)
+                     for name in candidates if len(name) >= 3),
+                    reverse=True
+                )
+                if not scored:
+                    continue
+                best_score, best_name = scored[0]
+                second_score = scored[1][0] if len(scored) > 1 else 0.0
+                if best_score >= 0.78 and best_score - second_score >= 0.10:
+                    matches.append((node, best_name))
+    # Only offer one typo correction at a time; multiple guesses are ambiguous.
+    return matches[0] if len(matches) == 1 else None
+
+
+def _replace_name_at_node(source, node, replacement):
+    lines = source.splitlines(keepends=True)
+    line_index = node.lineno - 1
+    if not (0 <= line_index < len(lines)):
+        return None
+    raw = lines[line_index].encode("utf-8")
+    start = node.col_offset
+    end = node.end_col_offset
+    try:
+        found = raw[start:end].decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if found != node.id:
+        return None
+    lines[line_index] = (
+        raw[:start] + replacement.encode("utf-8") + raw[end:]
+    ).decode("utf-8")
+    return "".join(lines)
+
+
 def fix_code(source):
     """Return a preview of a conservative repair; never run source code."""
     try:
@@ -129,6 +218,27 @@ def fix_code(source):
 
     candidate = _find_safe_reorder(tree)
     if candidate is None:
+        typo = _find_safe_name_typo(tree)
+        if typo is not None:
+            node, replacement = typo
+            fixed = _replace_name_at_node(source, node, replacement)
+            if fixed is not None:
+                try:
+                    ast.parse(fixed)
+                    compile(fixed, "<code-doctor-typo-preview>", "exec")
+                except (SyntaxError, ValueError, TypeError):
+                    fixed = None
+            if fixed is not None:
+                return json.dumps({
+                    "can_apply": True,
+                    "fixed_code": fixed,
+                    "changes": [{
+                        "line": node.lineno,
+                        "title": "تصحيح اسم قريب من متغير أو دالة معرّفة",
+                        "message": "تم اقتراح استبدال '" + node.id + "' بـ '" + replacement + "' لأن التطابق واضح."
+                    }],
+                    "message": "اقتراح مبني على تشابه الاسم مع اسم معروف في النطاق. راجع المعاينة قبل التطبيق؛ قد يكون الاسم مقصوداً."
+                }, ensure_ascii=False)
         return json.dumps({
             "can_apply": False,
             "fixed_code": source,

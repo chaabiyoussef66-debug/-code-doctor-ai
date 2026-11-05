@@ -115,6 +115,17 @@ def _DirectNamesFor(node):
 
 
 
+class _DirectLoadNodes(_DirectNames):
+    def __init__(self):
+        super().__init__()
+        self.nodes = []
+
+    def visit_Name(self, node):
+        super().visit_Name(node)
+        if isinstance(node.ctx, ast.Load):
+            self.nodes.append(node)
+
+
 def _find_safe_name_typo(tree):
     """Find one unambiguous misspelled local/builtin name in a function."""
     import builtins
@@ -140,10 +151,10 @@ def _find_safe_name_typo(tree):
             # Avoid guessing across explicit scope declarations.
             continue
         candidates = (visitor.stores | parameters | set(dir(builtins)))
+        loads = _DirectLoadNodes()
         for statement in function.body:
-            for node in ast.walk(statement):
-                if not isinstance(node, ast.Name) or not isinstance(node.ctx, ast.Load):
-                    continue
+            loads.visit(statement)
+        for node in loads.nodes:
                 if node.id in candidates or len(node.id) < 3:
                     continue
                 scored = sorted(

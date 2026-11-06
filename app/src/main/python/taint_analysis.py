@@ -140,12 +140,9 @@ class TaintFlowVisitor(ast.NodeVisitor):
 
         if parts and name in SQL_SINKS and node.args:
             query = node.args[0]
-            contains_sql = any(
-                isinstance(item, ast.Constant) and isinstance(item.value, str)
-                and SQL_PATTERN.search(item.value)
-                for item in ast.walk(query)
-            )
-            if contains_sql and self.is_tainted(query):
+            # A tainted value passed to a database execute API is a sink even
+            # when the SQL text is assembled outside this expression.
+            if self.is_tainted(query):
                 self.report(
                     node, "مدخلات غير موثوقة تصل إلى استعلام SQL",
                     "قيمة متأثرة بمدخلات المستخدم تصل إلى استعلام SQL مركب ديناميكياً؛ قد يحدث SQL injection.",

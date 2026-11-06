@@ -379,5 +379,26 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
 
+    def test_while_break_paths_assign_local_on_all_exits(self):
+        source = "def calculate(flag):\\n    while True:\\n        if flag:\\n            result = 100\\n            break\\n        else:\\n            result = 200\\n            break\\n    print(result)\\n\\ncalculate(False)"
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_while_break_path_without_assignment_is_reported(self):
+        source = "def calculate(flag):\\n    while True:\\n        if flag:\\n            result = 100\\n            break\\n        else:\\n            break\\n    print(result)"
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_while_true_without_break_keeps_following_code_unreachable(self):
+        source = "def calculate():\\n    while True:\\n        continue\\n    print(missing_local)"
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_for_break_paths_assign_local_on_all_exits(self):
+        source = "def calculate(flag, items):\\n    for item in items:\\n        if flag:\\n            result = 100\\n            break\\n        else:\\n            result = 200\\n            break\\n    else:\\n        result = 300\\n    print(result)"
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_for_empty_iterable_path_without_assignment_is_reported(self):
+        source = "def calculate(items):\\n    for item in items:\\n        result = 100\\n        break\\n    print(result)"
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+
 if __name__ == "__main__":
     unittest.main()

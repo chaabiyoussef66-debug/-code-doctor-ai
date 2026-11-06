@@ -418,5 +418,19 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertTrue(self.has_name_error(source))
 
 
+    def test_break_in_finally_overrides_pending_return(self):
+        source = """def calculate(flag):
+    while True:
+        try:
+            return 10
+        finally:
+            if not flag:
+                break
+    print(missing_value)
+
+calculate(False)"""
+        self.assertTrue(self.has_name_error(source))
+
+
 if __name__ == "__main__":
     unittest.main()

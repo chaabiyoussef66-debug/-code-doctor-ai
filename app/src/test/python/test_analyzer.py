@@ -431,6 +431,36 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
 calculate(False)"""
         self.assertTrue(self.has_name_error(source))
 
+    def test_exception_alias_read_after_handler_has_specific_diagnostic(self):
+        source = """def calculate():
+    try:
+        raise ValueError("test")
+    except ValueError as error:
+        pass
+    print(error)"""
+        result = scan(source)
+        matches = [
+            item for item in result["issues"]
+            if item["title"] == "استعمال متغير الاستثناء بعد انتهاء except"
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["line"], 6)
+        self.assertEqual(matches[0]["confidence"], "CONFIRMED")
+
+    def test_reassigned_exception_alias_can_be_read_after_handler(self):
+        source = """def calculate():
+    try:
+        raise ValueError("test")
+    except ValueError as error:
+        pass
+    error = "saved"
+    print(error)"""
+        self.assertNotIn(
+            "استعمال متغير الاستثناء بعد انتهاء except",
+            self.titles(source)
+        )
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
 
 if __name__ == "__main__":
     unittest.main()

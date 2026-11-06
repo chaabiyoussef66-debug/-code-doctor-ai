@@ -371,11 +371,11 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
 
 
     def test_try_handler_return_does_not_hide_continuing_normal_path(self):
-        source = "def calculate(flag):\\n    try:\\n        if flag:\\n            result = 100\\n            return result\\n        else:\\n            pass\\n    except Exception:\\n        return -1\\n    print(result)\\n\\ncalculate(False)"
+        source = "def calculate(flag):\n    try:\n        if flag:\n            result = 100\n            return result\n        else:\n            pass\n    except Exception:\n        return -1\n    print(result)\n\ncalculate(False)"
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
     def test_try_all_return_paths_make_following_code_unreachable(self):
-        source = "def calculate(flag):\\n    try:\\n        if flag:\\n            result = 100\\n            return result\\n        else:\\n            return 0\\n    except Exception:\\n        return -1\\n    print(result)"
+        source = "def calculate(flag):\n    try:\n        if flag:\n            result = 100\n            return result\n        else:\n            return 0\n    except Exception:\n        return -1\n    print(result)"
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
 

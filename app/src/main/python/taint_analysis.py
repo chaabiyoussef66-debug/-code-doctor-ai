@@ -8,7 +8,7 @@ import ast
 import re
 
 
-SQL_PATTERN = re.compile(r"(?i)\\b(select|insert|update|delete|replace)\\b")
+SQL_PATTERN = re.compile(r"(?i)\b(select|insert|update|delete|replace)\b")
 SQL_SINKS = {"execute", "executemany"}
 SHELL_CALLS = {"run", "Popen", "call", "check_call", "check_output"}
 

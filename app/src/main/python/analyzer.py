@@ -770,26 +770,41 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
     def visit_If(self, node):
         self.visit(node.test)
         before = set(self.assigned)
+        before_cleared = set(self.cleared_exception_names)
         was_terminated = self.terminated
 
         self.assigned = set(before)
+        self.cleared_exception_names = set(before_cleared)
         self.terminated = False
         self.visit_block(node.body)
         body_assigned = set(self.assigned)
+        body_cleared = set(self.cleared_exception_names)
         body_terminated = self.terminated
 
         self.assigned = set(before)
+        self.cleared_exception_names = set(before_cleared)
         self.terminated = False
         self.visit_block(node.orelse)
         else_assigned = set(self.assigned)
+        else_cleared = set(self.cleared_exception_names)
         else_terminated = self.terminated
 
         continuing = []
         if not body_terminated:
-            continuing.append(body_assigned)
+            continuing.append((body_assigned, body_cleared))
         if not else_terminated:
-            continuing.append(else_assigned)
-        self.assigned = set.intersection(*continuing) if continuing else before
+            continuing.append((else_assigned, else_cleared))
+
+        if continuing:
+            self.assigned = set.intersection(*(state[0] for state in continuing))
+            # A cleared-exception diagnostic is confirmed only when the name
+            # remains cleared on every reachable path to the read.
+            self.cleared_exception_names = set.intersection(
+                *(state[1] for state in continuing)
+            )
+        else:
+            self.assigned = before
+            self.cleared_exception_names = before_cleared
         self.terminated = was_terminated or not continuing
 
     def visit_Break(self, node):

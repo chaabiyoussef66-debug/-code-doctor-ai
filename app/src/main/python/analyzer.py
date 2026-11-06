@@ -1034,12 +1034,15 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
 
     def visit_Try(self, node):
         before = set(self.assigned)
+        before_cleared = set(self.cleared_exception_names)
         was_terminated = self.terminated
         continuing_paths = []
+        handler_cleared_paths = []
 
         # The try body has a normal-completion path and may also raise into
         # any handler. Analyze normal completion separately from handlers.
         self.assigned = set(before)
+        self.cleared_exception_names = set(before_cleared)
         self.terminated = False
         self.visit_block(node.body)
         body_terminated = self.terminated
@@ -1049,18 +1052,32 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             if not self.terminated:
                 continuing_paths.append(set(self.assigned))
 
-        # A handler can be entered after an exception at any point in the
-        # try body, so start conservatively from the pre-try assignments.
+        # Each except handler is a separate possible path. Do not let an
+        # alias cleared by one handler leak into analysis of another handler.
         for handler in node.handlers:
             self.assigned = set(before)
+            self.cleared_exception_names = set(before_cleared)
             self.terminated = False
             self.visit_ExceptHandler(handler)
             if not self.terminated:
                 continuing_paths.append(set(self.assigned))
+                handler_cleared_paths.append(set(self.cleared_exception_names))
 
         self.assigned = (
             set.intersection(*continuing_paths) if continuing_paths else before
         )
+        if handler_cleared_paths:
+            # A cleared-alias diagnosis is confirmed across multiple handlers
+            # only when every continuing handler clears that same name.
+            self.cleared_exception_names = (
+                set.intersection(*handler_cleared_paths)
+                if len(handler_cleared_paths) > 1
+                else handler_cleared_paths[0]
+            )
+        elif not node.handlers and not body_terminated:
+            self.cleared_exception_names = set(self.cleared_exception_names)
+        else:
+            self.cleared_exception_names = set(before_cleared)
         self.terminated = was_terminated or not continuing_paths
 
         # Finally runs after both normal and exceptional exits. Preserve an

@@ -783,18 +783,45 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         else_assigned = set(self.assigned)
         self.assigned = before & body_assigned & else_assigned
 
+    @staticmethod
+    def is_irrefutable_pattern(pattern):
+        # A capture pattern or wildcard always matches. An OR pattern is
+        # irrefutable when at least one alternative is irrefutable.
+        if isinstance(pattern, ast.MatchAs):
+            return pattern.pattern is None or LocalReadBeforeWriteVisitor.is_irrefutable_pattern(pattern.pattern)
+        if isinstance(pattern, ast.MatchOr):
+            return any(LocalReadBeforeWriteVisitor.is_irrefutable_pattern(item)
+                       for item in pattern.patterns)
+        return False
+
     def visit_Match(self, node):
         self.visit(node.subject)
         before = set(self.assigned)
+        possible_paths = []
+        has_unconditional_fallback = False
+
         for case in node.cases:
+            # Each case starts from the state before the match; captures are
+            # assigned only on the path where this pattern succeeds.
             self.assigned = set(before) | pattern_bindings(case.pattern)
             self.visit(case.pattern)
             if case.guard:
                 self.visit(case.guard)
             for statement in case.body:
                 self.visit(statement)
-        # A match may have no matching case, so it guarantees no new binding.
-        self.assigned = before
+            possible_paths.append(set(self.assigned))
+
+            # An unguarded irrefutable pattern (for example, case _:)
+            # handles every value not matched by previous cases.
+            if case.guard is None and self.is_irrefutable_pattern(case.pattern):
+                has_unconditional_fallback = True
+                break
+
+        # If no unconditional fallback exists, the match may select no case.
+        if not has_unconditional_fallback:
+            possible_paths.append(before)
+
+        self.assigned = set.intersection(*possible_paths) if possible_paths else before
 
     def visit_With(self, node):
         for item in node.items:

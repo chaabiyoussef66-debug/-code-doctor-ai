@@ -705,6 +705,8 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.terminated = False
         # Names bound by "except ... as name" are deleted when the handler exits.
         self.cleared_exception_names = set()
+        # Narrow literal facts are used to prune conditions for singleton loops.
+        self.constants = {}
         # Each active loop collects assignment states from its own break paths.
         self.loop_breaks = []
 
@@ -728,13 +730,20 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         elif isinstance(node.ctx, ast.Store):
             self.assigned.add(node.id)
             self.cleared_exception_names.discard(node.id)
+            self.constants.pop(node.id, None)
         elif isinstance(node.ctx, ast.Del):
             self.assigned.discard(node.id)
 
     def visit_Assign(self, node):
         self.visit(node.value)
+        known, value = literal(node.value)
         for target in node.targets:
             self.visit(target)
+            if isinstance(target, ast.Name):
+                if known:
+                    self.constants[target.id] = value
+                else:
+                    self.constants.pop(target.id, None)
 
     def visit_AnnAssign(self, node):
         if node.annotation:
@@ -767,8 +776,45 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             self.visit(node.value)
         self.terminated = True
 
+    def known_condition(self, node):
+        """Resolve a narrow set of conditions using literal loop values."""
+        def value_of(expression):
+            known, value = literal(expression)
+            if known:
+                return True, value
+            if isinstance(expression, ast.Name) and expression.id in self.constants:
+                return True, self.constants[expression.id]
+            return False, None
+
+        if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+            return True, node.value
+        if isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1:
+            left_known, left = value_of(node.left)
+            right_known, right = value_of(node.comparators[0])
+            if not (left_known and right_known):
+                return False, None
+            op = node.ops[0]
+            try:
+                if isinstance(op, ast.Eq): return True, left == right
+                if isinstance(op, ast.NotEq): return True, left != right
+                if isinstance(op, ast.Lt): return True, left < right
+                if isinstance(op, ast.LtE): return True, left <= right
+                if isinstance(op, ast.Gt): return True, left > right
+                if isinstance(op, ast.GtE): return True, left >= right
+                if isinstance(op, ast.Is): return True, left is right
+                if isinstance(op, ast.IsNot): return True, left is not right
+                if isinstance(op, ast.In): return True, left in right
+                if isinstance(op, ast.NotIn): return True, left not in right
+            except (TypeError, ValueError):
+                return False, None
+        return False, None
+
     def visit_If(self, node):
         self.visit(node.test)
+        known, condition = self.known_condition(node.test)
+        if known:
+            self.visit_block(node.body if condition else node.orelse)
+            return
         before = set(self.assigned)
         before_cleared = set(self.cleared_exception_names)
         was_terminated = self.terminated
@@ -846,14 +892,27 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         before = set(self.assigned)
         guaranteed_iteration = self.is_statically_nonempty_iterable(node.iter)
 
+        # For a one-item literal sequence, the loop target has one provable
+        # value. This lets conditions such as "if item == 2" be pruned safely.
+        singleton_known = False
+        singleton_value = None
+        if isinstance(node.iter, (ast.List, ast.Tuple, ast.Set)) and len(node.iter.elts) == 1:
+            singleton_known, singleton_value = literal(node.iter.elts[0])
+        elif isinstance(node.iter, ast.Constant) and isinstance(node.iter.value, (str, bytes)) and len(node.iter.value) == 1:
+            singleton_known, singleton_value = True, node.iter.value[0]
+
         self.loop_breaks.append([])
         self.assigned = set(before)
         self.terminated = False
         self.visit(node.target)
+        if singleton_known and isinstance(node.target, ast.Name):
+            self.constants[node.target.id] = singleton_value
         self.visit_block(node.body)
         body_assigned = set(self.assigned)
         body_terminated = self.terminated
         break_paths = self.loop_breaks.pop()
+        if isinstance(node.target, ast.Name):
+            self.constants.pop(node.target.id, None)
 
         # The else suite runs only on normal exhaustion. A statically
         # non-empty iterable must execute the body at least once; otherwise

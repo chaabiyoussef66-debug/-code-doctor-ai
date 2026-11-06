@@ -360,6 +360,14 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         source = 'def get_name(data, flag):\n    match data:\n        case {"name": captured}:\n            pass\n        case _ if flag:\n            captured = "Unknown"\n    print(captured)'
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
+    def test_exhaustive_match_return_paths_make_following_code_unreachable(self):
+        source = 'def get_name(data):\\n    match data:\\n        case {"name": captured}:\\n            return captured\\n        case _:\\n            return "Unknown"\\n    print(captured)'
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_match_with_nonreturning_fallback_keeps_following_code_reachable(self):
+        source = 'def get_name(data):\\n    match data:\\n        case {"name": captured}:\\n            return captured\\n        case _:\\n            pass\\n    print(captured)'
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
 
 if __name__ == "__main__":
     unittest.main()

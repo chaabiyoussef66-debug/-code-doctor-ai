@@ -792,26 +792,61 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         # Continue ends this iteration but does not create a loop-exit path.
         self.terminated = True
 
+    @staticmethod
+    def is_statically_nonempty_iterable(node):
+        # Prove only simple, side-effect-free iterables non-empty. Unknown
+        # iterables retain the conservative zero-iteration path.
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            return bool(node.elts)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
+            return bool(node.value)
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "range" and not node.keywords
+                and 1 <= len(node.args) <= 3):
+            values = []
+            for argument in node.args:
+                known, value = literal(argument)
+                if not known or not isinstance(value, int):
+                    return False
+                values.append(value)
+            try:
+                return len(range(*values)) > 0
+            except (TypeError, ValueError, OverflowError):
+                return False
+        return False
+
     def visit_For(self, node):
         self.visit(node.iter)
         before = set(self.assigned)
+        guaranteed_iteration = self.is_statically_nonempty_iterable(node.iter)
+
         self.loop_breaks.append([])
         self.assigned = set(before)
         self.terminated = False
         self.visit(node.target)
         self.visit_block(node.body)
+        body_assigned = set(self.assigned)
+        body_terminated = self.terminated
         break_paths = self.loop_breaks.pop()
 
-        # A for-loop may receive an empty iterable. That normal-exhaustion
-        # path runs the loop's else block; break paths skip it.
-        self.assigned = set(before)
-        self.terminated = False
-        self.visit_block(node.orelse)
-        normal_path = None if self.terminated else set(self.assigned)
+        # The else suite runs only on normal exhaustion. A statically
+        # non-empty iterable must execute the body at least once; otherwise
+        # preserve the possible empty-iterable path.
+        normal_seeds = []
+        if not guaranteed_iteration:
+            normal_seeds.append(set(before))
+        if not body_terminated:
+            normal_seeds.append(body_assigned)
 
-        exits = list(break_paths)
-        if normal_path is not None:
-            exits.append(normal_path)
+        normal_paths = []
+        for seed in normal_seeds:
+            self.assigned = set(seed)
+            self.terminated = False
+            self.visit_block(node.orelse)
+            if not self.terminated:
+                normal_paths.append(set(self.assigned))
+
+        exits = list(break_paths) + normal_paths
         self.assigned = set.intersection(*exits) if exits else before
         self.terminated = not exits
 

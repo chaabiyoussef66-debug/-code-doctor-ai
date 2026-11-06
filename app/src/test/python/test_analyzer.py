@@ -200,6 +200,20 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertTrue(self.has_name_error(source))
 
 
+    def test_match_pattern_capture_is_defined_inside_case(self):
+        source = 'def get_name(data):\n    match data:\n        case {"name": captured}:\n            return captured'
+        self.assertFalse(self.has_name_error(source))
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_match_pattern_capture_is_not_guaranteed_after_match(self):
+        source = 'def get_name(data):\n    match data:\n        case {"name": captured}:\n            pass\n    return captured'
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_match_star_capture_is_defined_inside_case(self):
+        source = "def first_item(data):\n    match data:\n        case [first, *remaining]:\n            return first"
+        self.assertFalse(self.has_name_error(source))
+
+
     def test_nonlocal_without_enclosing_binding_is_syntax_error(self):
         source = "def outer():\n    def inner():\n        nonlocal missing\n        return missing"
         self.assertEqual(scan(source)["status"], "SYNTAX_ERROR")

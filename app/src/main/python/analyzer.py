@@ -1104,6 +1104,39 @@ class ScopeNameVisitor(ast.NodeVisitor):
 
         self.terminated = was_terminated or (body_terminated and else_terminated)
 
+    @staticmethod
+    def _finally_can_break(statements):
+        """Check for a break belonging to the surrounding loop, not a nested scope."""
+        class BreakFinder(ast.NodeVisitor):
+            found = False
+
+            def visit_Break(self, node):
+                self.found = True
+
+            def visit_FunctionDef(self, node):
+                return
+
+            visit_AsyncFunctionDef = visit_FunctionDef
+
+            def visit_ClassDef(self, node):
+                return
+
+            def visit_Lambda(self, node):
+                return
+
+            def visit_For(self, node):
+                return
+
+            visit_AsyncFor = visit_For
+
+            def visit_While(self, node):
+                return
+
+        finder = BreakFinder()
+        for statement in statements:
+            finder.visit(statement)
+        return finder.found
+
     def visit_Try(self, node):
         was_terminated = self.terminated
         exit_states = []
@@ -1132,8 +1165,13 @@ class ScopeNameVisitor(ast.NodeVisitor):
         self.visit_block(node.finalbody)
         finally_terminated = self.terminated
 
-        self.terminated = was_terminated or finally_terminated or (
-            bool(exit_states) and all(exit_states)
+        # A break in finally overrides a pending return/raise and exits the
+        # surrounding loop, making code after that loop reachable.
+        finally_can_break = self._finally_can_break(node.finalbody)
+        self.terminated = was_terminated or (
+            not finally_can_break and (
+                finally_terminated or (bool(exit_states) and all(exit_states))
+            )
         )
 
     visit_TryStar = visit_Try

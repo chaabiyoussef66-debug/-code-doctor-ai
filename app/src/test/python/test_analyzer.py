@@ -581,5 +581,65 @@ calculate(False)"""
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
 
+
+class AdvancedTaintFlowTests(unittest.TestCase):
+    def taint_titles(self, source):
+        return [item["title"] for item in scan(source)["issues"]
+                if "مدخلات غير موثوقة تصل" in item["title"]]
+
+    def test_user_input_alias_to_eval_is_reported(self):
+        source = "payload = input()\\neval(payload)"
+        self.assertIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                      self.taint_titles(source))
+
+    def test_request_parameter_alias_to_exec_is_reported(self):
+        source = "payload = request.args.get('code')\\nexec(payload)"
+        self.assertIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                      self.taint_titles(source))
+
+    def test_user_input_in_sql_query_is_reported(self):
+        source = """user_id = request.args.get("id")
+query = "SELECT * FROM users WHERE id = " + user_id
+cursor.execute(query)"""
+        self.assertIn("مدخلات غير موثوقة تصل إلى استعلام SQL",
+                      self.taint_titles(source))
+
+    def test_user_input_in_shell_command_is_reported(self):
+        source = """host = input()
+subprocess.run("ping " + host, shell=True)"""
+        self.assertIn("مدخلات غير موثوقة تصل إلى subprocess مع shell=True",
+                      self.taint_titles(source))
+
+    def test_constant_eval_argument_is_not_taint_flow(self):
+        self.assertNotIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                         self.taint_titles("eval('1 + 1')"))
+
+    def test_overwriting_alias_with_constant_clears_taint(self):
+        source = "payload = input()\\npayload = 'safe'\\neval(payload)"
+        self.assertNotIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                         self.taint_titles(source))
+
+    def test_tainted_value_on_one_branch_is_preserved(self):
+        source = """if flag:
+    payload = input()
+else:
+    payload = "safe"
+eval(payload)"""
+        self.assertIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                      self.taint_titles(source))
+
+    def test_taint_does_not_leak_between_functions(self):
+        source = """def first():
+    payload = input()
+def second():
+    eval("1 + 1")"""
+        self.assertEqual(self.taint_titles(source), [])
+
+    def test_os_system_with_user_input_is_reported(self):
+        source = "command = input()\\nos.system(command)"
+        self.assertIn("مدخلات غير موثوقة تصل إلى أمر نظام",
+                      self.taint_titles(source))
+
+
 if __name__ == "__main__":
     unittest.main()

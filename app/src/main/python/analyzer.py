@@ -817,29 +817,34 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             return
         before = set(self.assigned)
         before_cleared = set(self.cleared_exception_names)
+        before_constants = dict(self.constants)
         was_terminated = self.terminated
 
         self.assigned = set(before)
         self.cleared_exception_names = set(before_cleared)
+        self.constants = dict(before_constants)
         self.terminated = False
         self.visit_block(node.body)
         body_assigned = set(self.assigned)
         body_cleared = set(self.cleared_exception_names)
+        body_constants = dict(self.constants)
         body_terminated = self.terminated
 
         self.assigned = set(before)
         self.cleared_exception_names = set(before_cleared)
+        self.constants = dict(before_constants)
         self.terminated = False
         self.visit_block(node.orelse)
         else_assigned = set(self.assigned)
         else_cleared = set(self.cleared_exception_names)
+        else_constants = dict(self.constants)
         else_terminated = self.terminated
 
         continuing = []
         if not body_terminated:
-            continuing.append((body_assigned, body_cleared))
+            continuing.append((body_assigned, body_cleared, body_constants))
         if not else_terminated:
-            continuing.append((else_assigned, else_cleared))
+            continuing.append((else_assigned, else_cleared, else_constants))
 
         if continuing:
             self.assigned = set.intersection(*(state[0] for state in continuing))
@@ -848,9 +853,16 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             self.cleared_exception_names = set.intersection(
                 *(state[1] for state in continuing)
             )
+            first_constants = continuing[0][2]
+            self.constants = {
+                name: value for name, value in first_constants.items()
+                if all(name in state[2] and type(state[2][name]) is type(value)
+                       and state[2][name] == value for state in continuing[1:])
+            }
         else:
             self.assigned = before
             self.cleared_exception_names = before_cleared
+            self.constants = before_constants
         self.terminated = was_terminated or not continuing
 
     def visit_Break(self, node):

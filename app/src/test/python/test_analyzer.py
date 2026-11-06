@@ -401,11 +401,11 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
 
 
     def test_nested_for_inner_break_assigns_local_before_outer_exit(self):
-        source = "def calculate():\\n    for i in range(3):\\n        for j in range(3):\\n            result = 100\\n            break\\n    print(result)\\ncalculate()"
+        source = "def calculate():\n    for i in range(3):\n        for j in range(3):\n            result = 100\n            break\n    print(result)\ncalculate()"
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
     def test_nested_for_unknown_outer_iterable_keeps_empty_path(self):
-        source = "def calculate(items):\\n    for i in items:\\n        for j in range(3):\\n            result = 100\\n            break\\n    print(result)"
+        source = "def calculate(items):\n    for i in items:\n        for j in range(3):\n            result = 100\n            break\n    print(result)"
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
 

@@ -588,12 +588,14 @@ class AdvancedTaintFlowTests(unittest.TestCase):
                 if "مدخلات غير موثوقة تصل" in item["title"]]
 
     def test_user_input_alias_to_eval_is_reported(self):
-        source = "payload = input()\\neval(payload)"
+        source = """payload = input()
+eval(payload)"""
         self.assertIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
                       self.taint_titles(source))
 
     def test_request_parameter_alias_to_exec_is_reported(self):
-        source = "payload = request.args.get('code')\\nexec(payload)"
+        source = """payload = request.args.get("code")
+exec(payload)"""
         self.assertIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
                       self.taint_titles(source))
 
@@ -615,7 +617,9 @@ subprocess.run("ping " + host, shell=True)"""
                          self.taint_titles("eval('1 + 1')"))
 
     def test_overwriting_alias_with_constant_clears_taint(self):
-        source = "payload = input()\\npayload = 'safe'\\neval(payload)"
+        source = """payload = input()
+payload = "safe"
+eval(payload)"""
         self.assertNotIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
                          self.taint_titles(source))
 
@@ -636,7 +640,8 @@ def second():
         self.assertEqual(self.taint_titles(source), [])
 
     def test_os_system_with_user_input_is_reported(self):
-        source = "command = input()\\nos.system(command)"
+        source = """command = input()
+os.system(command)"""
         self.assertIn("مدخلات غير موثوقة تصل إلى أمر نظام",
                       self.taint_titles(source))
 

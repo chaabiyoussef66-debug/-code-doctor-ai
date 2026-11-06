@@ -869,20 +869,42 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
 
     def visit_Try(self, node):
         before = set(self.assigned)
-        for statement in node.body:
-            self.visit(statement)
-        normal = set(self.assigned)
-        for statement in node.orelse:
-            self.visit(statement)
-        normal = set(self.assigned)
-        paths = [normal]
+        was_terminated = self.terminated
+        continuing_paths = []
+
+        # The try body has a normal-completion path and may also raise into
+        # any handler. Analyze normal completion separately from handlers.
+        self.assigned = set(before)
+        self.terminated = False
+        self.visit_block(node.body)
+        body_terminated = self.terminated
+
+        if not body_terminated:
+            self.visit_block(node.orelse)
+            if not self.terminated:
+                continuing_paths.append(set(self.assigned))
+
+        # A handler can be entered after an exception at any point in the
+        # try body, so start conservatively from the pre-try assignments.
         for handler in node.handlers:
             self.assigned = set(before)
-            self.visit(handler)
-            paths.append(set(self.assigned))
-        self.assigned = set.intersection(*paths) if paths else before
-        for statement in node.finalbody:
-            self.visit(statement)
+            self.terminated = False
+            self.visit_ExceptHandler(handler)
+            if not self.terminated:
+                continuing_paths.append(set(self.assigned))
+
+        self.assigned = (
+            set.intersection(*continuing_paths) if continuing_paths else before
+        )
+        self.terminated = was_terminated or not continuing_paths
+
+        # Finally runs after both normal and exceptional exits. Preserve an
+        # earlier return unless the finally block itself also terminates.
+        if node.finalbody:
+            already_terminated = self.terminated
+            self.terminated = False
+            self.visit_block(node.finalbody)
+            self.terminated = self.terminated or already_terminated
 
     visit_TryStar = visit_Try
 
@@ -892,8 +914,7 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         alias = node.name
         if alias:
             self.assigned.add(alias)
-        for statement in node.body:
-            self.visit(statement)
+        self.visit_block(node.body)
         if alias:
             self.assigned.discard(alias)
 

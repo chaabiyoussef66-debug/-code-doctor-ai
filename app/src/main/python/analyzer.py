@@ -703,6 +703,8 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.assigned = set(parameters)
         self.issues = []
         self.terminated = False
+        # Each active loop collects assignment states from its own break paths.
+        self.loop_breaks = []
 
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
@@ -779,33 +781,64 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.assigned = set.intersection(*continuing) if continuing else before
         self.terminated = was_terminated or not continuing
 
+    def visit_Break(self, node):
+        # A break exits only the innermost loop. Keep its assignment state
+        # separate from normal loop completion and return paths.
+        if self.loop_breaks:
+            self.loop_breaks[-1].append(set(self.assigned))
+        self.terminated = True
+
+    def visit_Continue(self, node):
+        # Continue ends this iteration but does not create a loop-exit path.
+        self.terminated = True
+
     def visit_For(self, node):
         self.visit(node.iter)
         before = set(self.assigned)
-        self.visit(node.target)
-        for statement in node.body:
-            self.visit(statement)
-        body_assigned = set(self.assigned)
+        self.loop_breaks.append([])
         self.assigned = set(before)
-        for statement in node.orelse:
-            self.visit(statement)
-        else_assigned = set(self.assigned)
-        # A loop may execute zero times.
-        self.assigned = before & body_assigned & else_assigned
+        self.terminated = False
+        self.visit(node.target)
+        self.visit_block(node.body)
+        break_paths = self.loop_breaks.pop()
+
+        # A for-loop may receive an empty iterable. That normal-exhaustion
+        # path runs the loop's else block; break paths skip it.
+        self.assigned = set(before)
+        self.terminated = False
+        self.visit_block(node.orelse)
+        normal_path = None if self.terminated else set(self.assigned)
+
+        exits = list(break_paths)
+        if normal_path is not None:
+            exits.append(normal_path)
+        self.assigned = set.intersection(*exits) if exits else before
+        self.terminated = not exits
 
     visit_AsyncFor = visit_For
 
     def visit_While(self, node):
         self.visit(node.test)
         before = set(self.assigned)
-        for statement in node.body:
-            self.visit(statement)
-        body_assigned = set(self.assigned)
+        always_true = isinstance(node.test, ast.Constant) and node.test.value is True
+        self.loop_breaks.append([])
         self.assigned = set(before)
-        for statement in node.orelse:
-            self.visit(statement)
-        else_assigned = set(self.assigned)
-        self.assigned = before & body_assigned & else_assigned
+        self.terminated = False
+        self.visit_block(node.body)
+        break_paths = self.loop_breaks.pop()
+
+        exits = list(break_paths)
+        # A non-constant-true while condition may become false, including
+        # before the first iteration. Its else block runs on that path.
+        if not always_true:
+            self.assigned = set(before)
+            self.terminated = False
+            self.visit_block(node.orelse)
+            if not self.terminated:
+                exits.append(set(self.assigned))
+
+        self.assigned = set.intersection(*exits) if exits else before
+        self.terminated = not exits
 
     @staticmethod
     def is_irrefutable_pattern(pattern):

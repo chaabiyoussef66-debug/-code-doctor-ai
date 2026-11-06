@@ -410,11 +410,11 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
 
 
     def test_finally_return_makes_following_undefined_name_unreachable(self):
-        source = "def calculate(value):\\n    try:\\n        if value > 0:\\n            return value\\n    finally:\\n        return 100\\n    print(result)\\n\\ncalculate(5)"
+        source = "def calculate(value):\n    try:\n        if value > 0:\n            return value\n    finally:\n        return 100\n    print(result)\n\ncalculate(5)"
         self.assertFalse(self.has_name_error(source))
 
     def test_conditional_finally_return_keeps_other_path_reachable(self):
-        source = "def calculate(flag):\\n    try:\\n        pass\\n    finally:\\n        if flag:\\n            return 100\\n    print(missing_value)"
+        source = "def calculate(flag):\n    try:\n        pass\n    finally:\n        if flag:\n            return 100\n    print(missing_value)"
         self.assertTrue(self.has_name_error(source))
 
 

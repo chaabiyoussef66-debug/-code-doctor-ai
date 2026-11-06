@@ -4,6 +4,8 @@ import builtins
 import json
 import re
 
+from taint_analysis import analyze_tainted_flows
+
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
 def issue(severity, title, node, message, suggestion, confidence="CONFIRMED"):
@@ -1457,6 +1459,9 @@ def analyze(source):
     inspector.visit(tree)
     issues.extend(inspector.issues)
     issues.extend(analyze_known_function_calls(tree))
+    # Advanced security pass: propagate untrusted input through simple aliases
+    # and branch merges before checking execution, shell and SQL sinks.
+    issues.extend(analyze_tainted_flows(tree))
 
     # Resolve names per lexical scope. A local variable in one function
     # must never make the same name appear defined in another function.

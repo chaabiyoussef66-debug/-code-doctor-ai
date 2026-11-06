@@ -352,5 +352,14 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertNotIn("احتمال وجود سر داخل الكود", self.titles('API_KEY = os.environ.get("API_KEY")'))
 
 
+    def test_match_irrefutable_fallback_assigns_name_on_all_paths(self):
+        source = 'def get_name(data):\\n    match data:\\n        case {"name": captured}:\\n            print(captured)\\n        case _:\\n            captured = "Unknown"\\n    print(captured)'
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_match_with_guarded_wildcard_is_not_exhaustive(self):
+        source = 'def get_name(data, flag):\\n    match data:\\n        case {"name": captured}:\\n            pass\\n        case _ if flag:\\n            captured = "Unknown"\\n    print(captured)'
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -703,20 +703,31 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.assigned = set(parameters)
         self.issues = []
         self.terminated = False
+        # Names bound by "except ... as name" are deleted when the handler exits.
+        self.cleared_exception_names = set()
         # Each active loop collects assignment states from its own break paths.
         self.loop_breaks = []
 
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
             if node.id in self.local_names and node.id not in self.assigned:
-                self.issues.append(issue(
-                    "ERROR", "استعمال متغير محلي قبل التهيئة", node,
-                    "المتغير '" + node.id + "' محلي في هذه الدالة لكنه يُقرأ قبل تعيين قيمة له؛ قد يحدث UnboundLocalError.",
-                    "عيّن قيمة للمتغير قبل استعماله، أو تحقق من جميع مسارات التنفيذ.",
-                    "POTENTIAL"
-                ))
+                if node.id in self.cleared_exception_names:
+                    self.issues.append(issue(
+                        "ERROR", "استعمال متغير الاستثناء بعد انتهاء except", node,
+                        "المتغير '" + node.id + "' حُذف تلقائياً عند انتهاء كتلة except؛ قراءته هنا قد تسبب UnboundLocalError.",
+                        "استعمل قيمة الاستثناء داخل كتلة except، أو انسخها إلى متغير آخر إذا احتجت إليها لاحقاً.",
+                        "CONFIRMED"
+                    ))
+                else:
+                    self.issues.append(issue(
+                        "ERROR", "استعمال متغير محلي قبل التهيئة", node,
+                        "المتغير '" + node.id + "' محلي في هذه الدالة لكنه يُقرأ قبل تعيين قيمة له؛ قد يحدث UnboundLocalError.",
+                        "عيّن قيمة للمتغير قبل استعماله، أو تحقق من جميع مسارات التنفيذ.",
+                        "POTENTIAL"
+                    ))
         elif isinstance(node.ctx, ast.Store):
             self.assigned.add(node.id)
+            self.cleared_exception_names.discard(node.id)
         elif isinstance(node.ctx, ast.Del):
             self.assigned.discard(node.id)
 
@@ -985,6 +996,7 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.visit_block(node.body)
         if alias:
             self.assigned.discard(alias)
+            self.cleared_exception_names.add(alias)
 
     def visit_Import(self, node):
         for alias in node.names:

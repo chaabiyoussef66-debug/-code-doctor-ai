@@ -476,6 +476,41 @@ calculate(False)"""
         self.assertIn("استعمال متغير محلي قبل التهيئة", titles)
         self.assertNotIn("استعمال متغير الاستثناء بعد انتهاء except", titles)
 
+    def test_different_except_aliases_do_not_leak_between_handlers(self):
+        source = """def calculate():
+    try:
+        risky_call()
+    except ValueError as value_error:
+        pass
+    except TypeError as type_error:
+        pass
+    print(value_error)
+    print(type_error)"""
+        result = scan(source)
+        confirmed_aliases = [
+            item["message"] for item in result["issues"]
+            if item["title"] == "استعمال متغير الاستثناء بعد انتهاء except"
+            and item["confidence"] == "CONFIRMED"
+        ]
+        self.assertEqual(confirmed_aliases, [])
+
+    def test_same_except_alias_is_confirmed_when_all_handlers_clear_it(self):
+        source = """def calculate():
+    try:
+        risky_call()
+    except ValueError as error:
+        pass
+    except TypeError as error:
+        pass
+    print(error)"""
+        result = scan(source)
+        matches = [
+            item for item in result["issues"]
+            if item["title"] == "استعمال متغير الاستثناء بعد انتهاء except"
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["confidence"], "CONFIRMED")
+
     def test_exception_alias_remains_confirmed_when_no_branch_reassigns_it(self):
         source = """def test(flag):
     try:

@@ -462,5 +462,54 @@ calculate(False)"""
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
 
+    def test_conditional_exception_alias_reassignment_is_not_confirmed_as_cleared(self):
+        source = """def test(flag):
+    try:
+        raise ValueError("original")
+    except ValueError as error:
+        pass
+    if flag:
+        error = "saved"
+    print(error)"""
+        result = scan(source)
+        titles = [item["title"] for item in result["issues"]]
+        self.assertIn("استعمال متغير محلي قبل التهيئة", titles)
+        self.assertNotIn("استعمال متغير الاستثناء بعد انتهاء except", titles)
+
+    def test_exception_alias_remains_confirmed_when_no_branch_reassigns_it(self):
+        source = """def test(flag):
+    try:
+        raise ValueError("original")
+    except ValueError as error:
+        pass
+    if flag:
+        print("yes")
+    else:
+        print("no")
+    print(error)"""
+        result = scan(source)
+        matches = [
+            item for item in result["issues"]
+            if item["title"] == "استعمال متغير الاستثناء بعد انتهاء except"
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["confidence"], "CONFIRMED")
+
+    def test_both_if_branches_reassign_exception_alias_without_warning(self):
+        source = """def test(flag):
+    try:
+        raise ValueError("original")
+    except ValueError as error:
+        pass
+    if flag:
+        error = "first"
+    else:
+        error = "second"
+    print(error)"""
+        titles = self.titles(source)
+        self.assertNotIn("استعمال متغير الاستثناء بعد انتهاء except", titles)
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", titles)
+
+
 if __name__ == "__main__":
     unittest.main()

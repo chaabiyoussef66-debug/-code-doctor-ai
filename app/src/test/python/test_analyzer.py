@@ -511,5 +511,39 @@ calculate(False)"""
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", titles)
 
 
+
+    def test_singleton_inner_loop_prunes_impossible_break_and_runs_else(self):
+        source = """def test(items):
+    try:
+        raise ValueError("خطأ")
+    except ValueError as error:
+        pass
+    for item in items:
+        for number in [1]:
+            if number == 2:
+                break
+        else:
+            error = "انتهت الحلقة الداخلية"
+    print(error)
+test([1])"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_singleton_inner_loop_preserves_possible_break(self):
+        source = """def test(items):
+    try:
+        raise ValueError("خطأ")
+    except ValueError as error:
+        pass
+    for item in items:
+        for number in [1]:
+            if number == 1:
+                break
+        else:
+            error = "انتهت الحلقة الداخلية"
+    print(error)
+test([1])"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+
 if __name__ == "__main__":
     unittest.main()

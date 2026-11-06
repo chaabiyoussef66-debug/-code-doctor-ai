@@ -513,35 +513,36 @@ calculate(False)"""
 
 
     def test_singleton_inner_loop_prunes_impossible_break_and_runs_else(self):
+        source = """def test():
+    for item in [1]:
+        for number in [1]:
+            if number == 2:
+                break
+        else:
+            result = "انتهت الحلقة الداخلية"
+    print(result)"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_singleton_inner_loop_preserves_possible_break(self):
+        source = """def test():
+    for item in [1]:
+        for number in [1]:
+            if number == 1:
+                break
+        else:
+            result = "انتهت الحلقة الداخلية"
+    print(result)"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_unknown_outer_iterable_keeps_empty_path_with_singleton_inner_loop(self):
         source = """def test(items):
-    try:
-        raise ValueError("خطأ")
-    except ValueError as error:
-        pass
     for item in items:
         for number in [1]:
             if number == 2:
                 break
         else:
-            error = "انتهت الحلقة الداخلية"
-    print(error)
-test([1])"""
-        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
-
-    def test_singleton_inner_loop_preserves_possible_break(self):
-        source = """def test(items):
-    try:
-        raise ValueError("خطأ")
-    except ValueError as error:
-        pass
-    for item in items:
-        for number in [1]:
-            if number == 1:
-                break
-        else:
-            error = "انتهت الحلقة الداخلية"
-    print(error)
-test([1])"""
+            result = "انتهت الحلقة الداخلية"
+    print(result)"""
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
 

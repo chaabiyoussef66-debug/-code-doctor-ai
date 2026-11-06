@@ -14,6 +14,17 @@ def issue(severity, title, node, message, suggestion, confidence="CONFIRMED"):
         "confidence": confidence
     }
 
+def pattern_bindings(pattern):
+    """Return names captured by a structural pattern-match case."""
+    names = set()
+    for item in ast.walk(pattern):
+        if isinstance(item, (ast.MatchAs, ast.MatchStar)) and item.name:
+            names.add(item.name)
+        elif isinstance(item, ast.MatchMapping) and item.rest:
+            names.add(item.rest)
+    return names
+
+
 def literal(node):
     """Return (known, value) for safe, side-effect-free literal containers."""
     if isinstance(node, ast.Constant):
@@ -645,6 +656,16 @@ class LocalBindingCollector(ast.NodeVisitor):
             if alias.name != "*":
                 self.names.add(alias.asname or alias.name)
 
+    def visit_Match(self, node):
+        self.visit(node.subject)
+        for case in node.cases:
+            self.visit(case.pattern)
+            self.names.update(pattern_bindings(case.pattern))
+            if case.guard:
+                self.visit(case.guard)
+            for statement in case.body:
+                self.visit(statement)
+
     def visit_ExceptHandler(self, node):
         if node.name:
             self.names.add(node.name)
@@ -761,6 +782,19 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             self.visit(statement)
         else_assigned = set(self.assigned)
         self.assigned = before & body_assigned & else_assigned
+
+    def visit_Match(self, node):
+        self.visit(node.subject)
+        before = set(self.assigned)
+        for case in node.cases:
+            self.assigned = set(before) | pattern_bindings(case.pattern)
+            self.visit(case.pattern)
+            if case.guard:
+                self.visit(case.guard)
+            for statement in case.body:
+                self.visit(statement)
+        # A match may have no matching case, so it guarantees no new binding.
+        self.assigned = before
 
     def visit_With(self, node):
         for item in node.items:

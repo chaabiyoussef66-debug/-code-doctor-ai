@@ -1067,6 +1067,76 @@ class ScopeNameVisitor(ast.NodeVisitor):
         self.closure_names = set(closure_names or ())
         self.scope_kind = scope_kind
         self.issues = []
+        self.terminated = False
+
+    def visit_block(self, statements):
+        for statement in statements:
+            if self.terminated:
+                break
+            self.visit(statement)
+
+    def visit_Module(self, node):
+        self.visit_block(node.body)
+
+    def visit_Return(self, node):
+        if node.value:
+            self.visit(node.value)
+        self.terminated = True
+
+    def visit_Raise(self, node):
+        if node.exc:
+            self.visit(node.exc)
+        if node.cause:
+            self.visit(node.cause)
+        self.terminated = True
+
+    def visit_If(self, node):
+        self.visit(node.test)
+        was_terminated = self.terminated
+
+        self.terminated = False
+        self.visit_block(node.body)
+        body_terminated = self.terminated
+
+        self.terminated = False
+        self.visit_block(node.orelse)
+        else_terminated = self.terminated
+
+        self.terminated = was_terminated or (body_terminated and else_terminated)
+
+    def visit_Try(self, node):
+        was_terminated = self.terminated
+        exit_states = []
+
+        self.terminated = False
+        self.visit_block(node.body)
+        body_terminated = self.terminated
+
+        if not body_terminated:
+            self.terminated = False
+            self.visit_block(node.orelse)
+            exit_states.append(self.terminated)
+        else:
+            exit_states.append(True)
+
+        for handler in node.handlers:
+            self.terminated = False
+            if handler.type:
+                self.visit(handler.type)
+            self.visit_block(handler.body)
+            exit_states.append(self.terminated)
+
+        # A finally suite executes on every exit path and may override
+        # an earlier return/raise with its own return/raise.
+        self.terminated = False
+        self.visit_block(node.finalbody)
+        finally_terminated = self.terminated
+
+        self.terminated = was_terminated or finally_terminated or (
+            bool(exit_states) and all(exit_states)
+        )
+
+    visit_TryStar = visit_Try
 
     @staticmethod
     def parameters(args):
@@ -1124,8 +1194,7 @@ class ScopeNameVisitor(ast.NodeVisitor):
             self.closure_names | enclosing_locals,
             "function"
         )
-        for statement in node.body:
-            child.visit(statement)
+        child.visit_block(node.body)
         self.issues.extend(child.issues)
 
         local_checker = LocalReadBeforeWriteVisitor(locals_for_function, parameters)
@@ -1164,8 +1233,7 @@ class ScopeNameVisitor(ast.NodeVisitor):
             self.closure_names | enclosing_locals,
             "class"
         )
-        for statement in node.body:
-            child.visit(statement)
+        child.visit_block(node.body)
         self.issues.extend(child.issues)
 
         class_checker = LocalReadBeforeWriteVisitor(class_locals, set(dir(builtins)))

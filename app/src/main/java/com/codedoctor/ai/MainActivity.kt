@@ -164,6 +164,22 @@ class MainActivity : ComponentActivity() {
         page.addView(reportActions, wrap())
 
         page.addView(Button(this).apply {
+            text = "حول التطبيق"
+            setOnClickListener {
+                val version = try {
+                    packageManager.getPackageInfo(packageName, 0).versionName ?: "غير معروف"
+                } catch (_: Exception) {
+                    "غير معروف"
+                }
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("حول CODE DOCTOR AI")
+                    .setMessage("طبيب الأكواد — تحليل Python محلياً\\nالإصدار: $version\\n\\nالفحص يتم على الهاتف ولا يتم رفع الكود إلى الإنترنت.")
+                    .setPositiveButton("حسناً", null)
+                    .show()
+            }
+        }, wrap())
+
+        page.addView(Button(this).apply {
             text = "سجل الفحوصات السابقة"
             setOnClickListener { showHistory() }
         }, wrap())

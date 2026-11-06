@@ -702,6 +702,7 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.local_names = set(local_names)
         self.assigned = set(parameters)
         self.issues = []
+        self.terminated = False
 
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
@@ -742,18 +743,41 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.visit(node.value)
         self.visit(node.target)
 
+    def visit_block(self, statements):
+        for statement in statements:
+            if self.terminated:
+                break
+            self.visit(statement)
+
+    def visit_Return(self, node):
+        if node.value:
+            self.visit(node.value)
+        self.terminated = True
+
     def visit_If(self, node):
         self.visit(node.test)
         before = set(self.assigned)
+        was_terminated = self.terminated
+
         self.assigned = set(before)
-        for statement in node.body:
-            self.visit(statement)
+        self.terminated = False
+        self.visit_block(node.body)
         body_assigned = set(self.assigned)
+        body_terminated = self.terminated
+
         self.assigned = set(before)
-        for statement in node.orelse:
-            self.visit(statement)
+        self.terminated = False
+        self.visit_block(node.orelse)
         else_assigned = set(self.assigned)
-        self.assigned = body_assigned & else_assigned
+        else_terminated = self.terminated
+
+        continuing = []
+        if not body_terminated:
+            continuing.append(body_assigned)
+        if not else_terminated:
+            continuing.append(else_assigned)
+        self.assigned = set.intersection(*continuing) if continuing else before
+        self.terminated = was_terminated or not continuing
 
     def visit_For(self, node):
         self.visit(node.iter)
@@ -797,31 +821,41 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
     def visit_Match(self, node):
         self.visit(node.subject)
         before = set(self.assigned)
-        possible_paths = []
+        continuing_paths = []
         has_unconditional_fallback = False
+        was_terminated = self.terminated
+        all_cases_terminate = True
 
         for case in node.cases:
             # Each case starts from the state before the match; captures are
             # assigned only on the path where this pattern succeeds.
             self.assigned = set(before) | pattern_bindings(case.pattern)
+            self.terminated = False
             self.visit(case.pattern)
             if case.guard:
                 self.visit(case.guard)
-            for statement in case.body:
-                self.visit(statement)
-            possible_paths.append(set(self.assigned))
+            self.visit_block(case.body)
 
-            # An unguarded irrefutable pattern (for example, case _:)
-            # handles every value not matched by previous cases.
+            if not self.terminated:
+                continuing_paths.append(set(self.assigned))
+                all_cases_terminate = False
+
+            # An unguarded irrefutable pattern handles every remaining value.
             if case.guard is None and self.is_irrefutable_pattern(case.pattern):
                 has_unconditional_fallback = True
                 break
 
-        # If no unconditional fallback exists, the match may select no case.
+        # Without an exhaustive fallback, no case may match.
         if not has_unconditional_fallback:
-            possible_paths.append(before)
+            continuing_paths.append(before)
+            all_cases_terminate = False
 
-        self.assigned = set.intersection(*possible_paths) if possible_paths else before
+        self.assigned = (
+            set.intersection(*continuing_paths) if continuing_paths else before
+        )
+        self.terminated = was_terminated or (
+            has_unconditional_fallback and all_cases_terminate
+        )
 
     def visit_With(self, node):
         for item in node.items:
@@ -1006,8 +1040,7 @@ class ScopeNameVisitor(ast.NodeVisitor):
         self.issues.extend(child.issues)
 
         local_checker = LocalReadBeforeWriteVisitor(locals_for_function, parameters)
-        for statement in node.body:
-            local_checker.visit(statement)
+        local_checker.visit_block(node.body)
         self.issues.extend(local_checker.issues)
 
     visit_AsyncFunctionDef = visit_FunctionDef

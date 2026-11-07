@@ -6,7 +6,7 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
-ANALYZER_BUILD_ID = "scope-diagnostic-8"
+ANALYZER_BUILD_ID = "scope-diagnostic-9"
 
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
@@ -1301,6 +1301,52 @@ def guaranteed_straight_line_global_writes(function_node):
     if not declared:
         return set()
 
+    def guaranteed_exception_finally_writes(statements):
+        """Collect guaranteed nested-finally writes before an outer handler.
+
+        Stop at operations that may raise before a later nested try is reached.
+        This avoids treating a finally suite as executed when an earlier call
+        could have transferred control directly to the enclosing handler.
+        """
+        writes = set()
+        for statement in statements:
+            if isinstance(statement, (ast.Global, ast.Pass)):
+                continue
+            if isinstance(statement, ast.Expr):
+                if isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
+                    continue
+                # A call or other expression may raise before later statements.
+                break
+            if isinstance(statement, ast.Assign):
+                known, _ = literal(statement.value)
+                if not known:
+                    break
+                continue
+            if isinstance(statement, ast.AnnAssign):
+                if statement.value is not None:
+                    known, _ = literal(statement.value)
+                    if not known:
+                        break
+                continue
+            if isinstance(statement, ast.If):
+                # Only a simple name/constant condition is treated as safe to
+                # evaluate here; both branches must guarantee the same writes.
+                if not isinstance(statement.test, (ast.Name, ast.Constant)):
+                    break
+                body_writes = guaranteed_exception_finally_writes(statement.body)
+                else_writes = guaranteed_exception_finally_writes(statement.orelse)
+                writes.update(body_writes & else_writes)
+                continue
+            if isinstance(statement, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+                final_writes = guaranteed(statement.finalbody) or set()
+                writes.update(final_writes)
+                # The nested try has now completed its finally suite on every
+                # path that continues to the next statement.
+                continue
+            # Unknown control flow may raise or bypass later nested try blocks.
+            break
+        return writes
+
     def guaranteed(statements):
         assigned = set()
         for statement in statements:
@@ -1346,6 +1392,13 @@ def guaranteed_straight_line_global_writes(function_node):
                 path_writes = [body_writes | else_writes]
                 for handler in statement.handlers:
                     handler_writes = guaranteed(handler.body) or set()
+                    # A nested try/finally inside this try body has already run
+                    # its finally suite before an exception reaches this handler.
+                    # Carry only such writes that are guaranteed on every path
+                    # through the body before a possible exception.
+                    handler_writes.update(
+                        guaranteed_exception_finally_writes(statement.body)
+                    )
                     path_writes.append(handler_writes)
                 guaranteed_try_writes = (
                     set.intersection(*path_writes) if path_writes else set()

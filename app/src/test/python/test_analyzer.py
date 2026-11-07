@@ -9,7 +9,7 @@ def scan(source):
 
 class AnalyzerRuntimeErrorTests(unittest.TestCase):
     def test_analyzer_build_fingerprint_is_returned(self):
-        self.assertEqual(scan("value = 1")["analyzer_build_id"], "scope-diagnostic-8")
+        self.assertEqual(scan("value = 1")["analyzer_build_id"], "scope-diagnostic-9")
 
     def titles(self, source):
         return [item["title"] for item in scan(source)["issues"]]
@@ -1162,6 +1162,70 @@ result = 100"""
             pass
         finally:
             print("Initialization finished")
+    initialize()
+    return shared_result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "shared_result" in item["message"]
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
+    def test_nested_finally_write_survives_exception_to_outer_handler(self):
+        source = """def calculate():
+    def initialize():
+        global shared_result
+        try:
+            try:
+                risky_call()
+            finally:
+                shared_result = 950
+        except ValueError:
+            print("Handled")
+    initialize()
+    return shared_result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "shared_result" in item["message"]
+        ]
+        self.assertEqual(matches, [])
+
+    def test_nested_finally_conditional_write_remains_potential(self):
+        source = """def calculate(flag):
+    def initialize():
+        global shared_result
+        try:
+            try:
+                risky_call()
+            finally:
+                if flag:
+                    shared_result = 950
+        except ValueError:
+            print("Handled")
+    initialize()
+    return shared_result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "shared_result" in item["message"]
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
+    def test_earlier_risky_call_does_not_assume_later_nested_finally_ran(self):
+        source = """def calculate():
+    def initialize():
+        global shared_result
+        try:
+            risky_call()
+            try:
+                another_call()
+            finally:
+                shared_result = 950
+        except ValueError:
+            print("Handled")
     initialize()
     return shared_result"""
         matches = [

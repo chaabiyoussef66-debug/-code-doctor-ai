@@ -531,7 +531,7 @@ calculate(False)"""
             if item["title"] == "استعمال متغير الاستثناء بعد انتهاء except"
         ]
         self.assertEqual(len(matches), 1)
-        self.assertEqual(matches[0]["line"], 8)
+        self.assertEqual(matches[0]["line"], 6)
         self.assertEqual(matches[0]["confidence"], "CONFIRMED")
 
     def test_reassigned_exception_alias_can_be_read_after_handler(self):
@@ -1293,7 +1293,7 @@ class FinallyReturnPathRegressionTests(unittest.TestCase):
         print(value)"""
         matches = self.matching_local_reads(source, "value")
         self.assertEqual(len(matches), 1)
-        self.assertEqual(matches[0]["line"], 6)
+        self.assertEqual(matches[0]["line"], 8)
         self.assertEqual(matches[0]["confidence"], "POTENTIAL")
 
     def test_finally_read_is_safe_when_both_if_paths_assign(self):

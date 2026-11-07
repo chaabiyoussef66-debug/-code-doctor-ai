@@ -731,5 +731,65 @@ def calculate():
     return value"""
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
+
+    def test_multiple_except_handlers_assign_same_local_on_every_path(self):
+        source = """def calculate():
+    try:
+        risky_call()
+        value = 1
+    except ValueError:
+        value = 2
+    except TypeError:
+        value = 3
+    return value"""
+        titles = self.titles(source)
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", titles)
+
+    def test_one_except_handler_without_assignment_preserves_unbound_warning(self):
+        source = """def calculate():
+    try:
+        risky_call()
+        value = 1
+    except ValueError:
+        value = 2
+    except TypeError:
+        pass
+    return value"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_try_else_and_all_handlers_assign_local(self):
+        source = """def calculate():
+    try:
+        risky_call()
+        value = 1
+    except ValueError:
+        value = 2
+    except TypeError:
+        value = 3
+    else:
+        value = 4
+    return value"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_finally_assignment_initializes_local_after_try_paths(self):
+        source = """def calculate():
+    try:
+        risky_call()
+    except ValueError:
+        pass
+    finally:
+        value = 9
+    return value"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_non_raising_try_with_except_assignment_does_not_assume_handler_runs(self):
+        source = """def calculate():
+    try:
+        pass
+    except ValueError:
+        value = 9
+    return value"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
 if __name__ == "__main__":
     unittest.main()

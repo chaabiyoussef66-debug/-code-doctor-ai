@@ -6,7 +6,7 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
-ANALYZER_BUILD_ID = "scope-diagnostic-2"
+ANALYZER_BUILD_ID = "scope-diagnostic-3"
 
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
@@ -1070,6 +1070,23 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             return False
         return False
 
+    def _try_body_may_raise(self, statements):
+        """Conservatively identify try bodies made only of safe literal assignments."""
+        for statement in statements:
+            if isinstance(statement, ast.Pass):
+                continue
+            if isinstance(statement, ast.Assign):
+                known, _ = literal(statement.value)
+                if known and all(isinstance(target, ast.Name) for target in statement.targets):
+                    continue
+            if (isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Constant)):
+                continue
+            # Calls, attribute access, operators, control-flow tests, and
+            # unknown statements retain a possible exceptional path.
+            return True
+        return False
+
     def visit_Try(self, node):
         before = set(self.assigned)
         before_cleared = set(self.cleared_exception_names)
@@ -1093,9 +1110,12 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             if not self.terminated:
                 continuing_paths.append(set(self.assigned))
 
-        # Each except handler is a separate possible path. Do not let an
-        # alias cleared by one handler leak into analysis of another handler.
-        for handler in node.handlers:
+        # A handler is reachable only if the try body contains an operation
+        # that may raise. Safe literal assignments cannot enter an except path.
+        handlers_reachable = self._try_body_may_raise(node.body)
+        # Each reachable except handler is a separate possible path. Do not
+        # let an alias cleared by one handler leak into another handler.
+        for handler in (node.handlers if handlers_reachable else []):
             self.assigned = set(before)
             self.cleared_exception_names = set(before_cleared)
             self.terminated = False

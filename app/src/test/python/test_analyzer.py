@@ -421,14 +421,14 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
     return result"""
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
-    def test_for_continue_keeps_following_code_reachable_through_else(self):
+    def test_for_continue_without_else_assignment_reports_unbound_after_exhaustion(self):
         source = """def calculate():
     for item in [1]:
         continue
     else:
-        result = 7
-    print(result)"""
-        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+        pass
+    return result"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
 
     def test_finally_return_makes_following_undefined_name_unreachable(self):

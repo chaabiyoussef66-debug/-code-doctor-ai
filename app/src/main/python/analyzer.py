@@ -6,7 +6,7 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
-ANALYZER_BUILD_ID = "scope-diagnostic-3"
+ANALYZER_BUILD_ID = "scope-diagnostic-4"
 
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
@@ -712,8 +712,10 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.cleared_exception_names = set()
         # Narrow literal facts are used to prune conditions for singleton loops.
         self.constants = {}
-        # Each active loop collects assignment states from its own break paths.
+        # Each active loop tracks exits separately: break exits the loop,
+        # while continue advances to the next iteration and may later exhaust.
         self.loop_breaks = []
+        self.loop_continues = []
 
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
@@ -886,7 +888,10 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.terminated = True
 
     def visit_Continue(self, node):
-        # Continue ends this iteration but does not create a loop-exit path.
+        # Continue ends this iteration. Its state can reach normal exhaustion
+        # (and therefore the loop-else suite) on a later iteration.
+        if self.loop_continues:
+            self.loop_continues[-1].append(set(self.assigned))
         self.terminated = True
 
     @staticmethod
@@ -927,6 +932,7 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             singleton_known, singleton_value = True, node.iter.value[0]
 
         self.loop_breaks.append([])
+        self.loop_continues.append([])
         self.assigned = set(before)
         self.terminated = False
         self.visit(node.target)
@@ -936,6 +942,7 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         body_assigned = set(self.assigned)
         body_terminated = self.terminated
         break_paths = self.loop_breaks.pop()
+        continue_paths = self.loop_continues.pop()
         if isinstance(node.target, ast.Name):
             self.constants.pop(node.target.id, None)
 
@@ -947,6 +954,9 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             normal_seeds.append(set(before))
         if not body_terminated:
             normal_seeds.append(body_assigned)
+        # A continue path is not a break or return: iteration proceeds, and
+        # the iterable may be exhausted after that iteration.
+        normal_seeds.extend(continue_paths)
 
         normal_paths = []
         for seed in normal_seeds:
@@ -967,20 +977,24 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         before = set(self.assigned)
         always_true = isinstance(node.test, ast.Constant) and node.test.value is True
         self.loop_breaks.append([])
+        self.loop_continues.append([])
         self.assigned = set(before)
         self.terminated = False
         self.visit_block(node.body)
         break_paths = self.loop_breaks.pop()
+        continue_paths = self.loop_continues.pop()
 
         exits = list(break_paths)
-        # A non-constant-true while condition may become false, including
-        # before the first iteration. Its else block runs on that path.
+        # A non-constant-true while condition may become false before the
+        # first iteration or after any continue path. The else suite then runs.
         if not always_true:
-            self.assigned = set(before)
-            self.terminated = False
-            self.visit_block(node.orelse)
-            if not self.terminated:
-                exits.append(set(self.assigned))
+            normal_seeds = [set(before)] + continue_paths
+            for seed in normal_seeds:
+                self.assigned = set(seed)
+                self.terminated = False
+                self.visit_block(node.orelse)
+                if not self.terminated:
+                    exits.append(set(self.assigned))
 
         self.assigned = set.intersection(*exits) if exits else before
         self.terminated = not exits

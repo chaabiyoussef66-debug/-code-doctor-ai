@@ -219,6 +219,7 @@ class MainActivity : ComponentActivity() {
             }
             val report = StringBuilder()
             report.append("CODE DOCTOR AI\n")
+                .append("بصمة المحلل: ").append(data.optString("analyzer_build_id", "غير متاحة")).append("\n")
                 .append("حالة الفحص: ").append(status).append("\n")
                 .append("عدد الملاحظات: ").append(issues.length()).append("\n")
                 .append("أخطاء: ").append(errors)

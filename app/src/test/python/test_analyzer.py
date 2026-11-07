@@ -221,7 +221,7 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
             flag = True
         case _:
             flag = True
-    if flag:
+    if flag == True:
         result = 1
     return result"""
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))

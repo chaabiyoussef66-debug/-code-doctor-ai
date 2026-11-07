@@ -1287,6 +1287,21 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.issues.extend(child.issues)
 
 
+class GlobalReadBeforeWriteVisitor(LocalReadBeforeWriteVisitor):
+    """Track reads of function-declared globals across reachable control-flow paths."""
+    def visit_Name(self, node):
+        if isinstance(node.ctx, ast.Load):
+            if node.id in self.local_names and node.id not in self.assigned:
+                self.issues.append(issue(
+                    "ERROR", "اسم أو متغير غير معرّف", node,
+                    "المتغير العام '" + node.id + "' قد يُقرأ قبل أن يُسند إليه أي مسار قيمة؛ قد يسبب NameError.",
+                    "تأكد من تعريف المتغير العام قبل استدعاء الدالة، أو أسند إليه قيمة في جميع مسارات التنفيذ.",
+                    "POTENTIAL"
+                ))
+                return
+        super().visit_Name(node)
+
+
 class ScopeNameVisitor(ast.NodeVisitor):
     """Conservative undefined-name checks respecting Python lexical scopes."""
     def __init__(self, available, local_names=None, closure_names=None, scope_kind="module", shadowed_builtins=None):
@@ -1470,6 +1485,16 @@ class ScopeNameVisitor(ast.NodeVisitor):
         )
         local_checker.visit_block(node.body)
         self.issues.extend(local_checker.issues)
+
+        # A global declaration changes the binding destination, but it does
+        # not guarantee that a value is assigned on every path. Seed only
+        # names known to be bound at module scope, then analyze function
+        # assignments with the same conservative path engine used for locals.
+        global_checker = GlobalReadBeforeWriteVisitor(
+            globals_bound, globals_bound & self.available, self.shadowed_builtins
+        )
+        global_checker.visit_block(node.body)
+        self.issues.extend(global_checker.issues)
 
     visit_AsyncFunctionDef = visit_FunctionDef
 

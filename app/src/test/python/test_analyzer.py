@@ -9,7 +9,7 @@ def scan(source):
 
 class AnalyzerRuntimeErrorTests(unittest.TestCase):
     def test_analyzer_build_fingerprint_is_returned(self):
-        self.assertEqual(scan("value = 1")["analyzer_build_id"], "scope-diagnostic-1")
+        self.assertEqual(scan("value = 1")["analyzer_build_id"], "scope-diagnostic-2")
 
     def titles(self, source):
         return [item["title"] for item in scan(source)["issues"]]
@@ -433,6 +433,24 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
 
 calculate(False)"""
         self.assertTrue(self.has_name_error(source))
+
+    def test_unconditional_raise_routes_to_handler_without_false_unbound_warning(self):
+        source = """def calculate():
+    try:
+        raise ValueError("bad input")
+    except ValueError:
+        value = 7
+    return value"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_unconditional_raise_handler_without_assignment_keeps_unbound_warning(self):
+        source = """def calculate():
+    try:
+        raise ValueError("bad input")
+    except ValueError:
+        pass
+    return value"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
     def test_exception_alias_read_after_handler_has_specific_diagnostic(self):
         source = """def calculate():

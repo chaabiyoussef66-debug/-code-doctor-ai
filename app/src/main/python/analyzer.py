@@ -6,7 +6,7 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
-ANALYZER_BUILD_ID = "scope-diagnostic-1"
+ANALYZER_BUILD_ID = "scope-diagnostic-2"
 
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
@@ -775,6 +775,14 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             if self.terminated:
                 break
             self.visit(statement)
+
+    def visit_Raise(self, node):
+        """A raise ends this path; an enclosing try may route it to a handler."""
+        if node.exc:
+            self.visit(node.exc)
+        if node.cause:
+            self.visit(node.cause)
+        self.terminated = True
 
     def visit_Return(self, node):
         if node.value:

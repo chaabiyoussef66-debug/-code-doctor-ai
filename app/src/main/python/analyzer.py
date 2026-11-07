@@ -1339,25 +1339,22 @@ def guaranteed_straight_line_global_writes(function_node):
                 # A normal path includes the try body followed by its else suite.
                 # Each handler is a separate possible normal-return path; start
                 # handlers conservatively without assuming writes from the body.
-                body_writes = guaranteed(statement.body)
-                else_writes = guaranteed(statement.orelse)
-                if body_writes is None or else_writes is None:
-                    return None
+                # Unknown statements do not add guaranteed writes, but they
+                # must not erase writes established on earlier statements.
+                body_writes = guaranteed(statement.body) or set()
+                else_writes = guaranteed(statement.orelse) or set()
                 path_writes = [body_writes | else_writes]
                 for handler in statement.handlers:
-                    handler_writes = guaranteed(handler.body)
-                    if handler_writes is None:
-                        return None
+                    handler_writes = guaranteed(handler.body) or set()
                     path_writes.append(handler_writes)
                 guaranteed_try_writes = (
                     set.intersection(*path_writes) if path_writes else set()
                 )
 
-                # A finally suite runs on every exit path. Its guaranteed
-                # writes add to writes already guaranteed by try/except paths.
-                final_writes = guaranteed(statement.finalbody)
-                if final_writes is None:
-                    return None
+                # A finally suite runs on every exit path. Even if the try
+                # body contains an early return/raise, guaranteed writes in
+                # finally still apply; unknown final statements add no writes.
+                final_writes = guaranteed(statement.finalbody) or set()
                 assigned.update(guaranteed_try_writes | final_writes)
                 continue
             else:

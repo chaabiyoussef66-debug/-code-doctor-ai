@@ -412,6 +412,25 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
 
+    def test_for_continue_runs_else_on_normal_exhaustion(self):
+        source = """def calculate():
+    for item in [1]:
+        continue
+    else:
+        result = 7
+    return result"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_for_continue_keeps_following_code_reachable_through_else(self):
+        source = """def calculate():
+    for item in [1]:
+        continue
+    else:
+        result = 7
+    print(result)"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+
     def test_finally_return_makes_following_undefined_name_unreachable(self):
         source = "def calculate(value):\n    try:\n        if value > 0:\n            return value\n    finally:\n        return 100\n    print(result)\n\ncalculate(5)"
         self.assertFalse(self.has_name_error(source))

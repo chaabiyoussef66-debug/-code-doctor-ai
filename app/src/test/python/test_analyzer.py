@@ -422,7 +422,9 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
     def test_for_continue_without_else_assignment_reports_unbound_after_exhaustion(self):
-        source = """def calculate():
+        source = """def calculate(flag):
+    if flag:
+        result = 10
     for item in [1]:
         continue
     else:

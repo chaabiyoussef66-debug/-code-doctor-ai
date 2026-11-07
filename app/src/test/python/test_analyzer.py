@@ -678,5 +678,16 @@ os.system(command)"""
     return saved_error"""
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
+    def test_shadowed_module_int_does_not_count_as_guaranteed_builtin_error(self):
+        source = """int = lambda value: value
+
+def calculate():
+    try:
+        int("invalid")
+    except ValueError:
+        saved_error = "caught"
+    return saved_error"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
 if __name__ == "__main__":
     unittest.main()

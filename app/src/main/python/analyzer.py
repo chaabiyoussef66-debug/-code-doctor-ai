@@ -6,7 +6,7 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
-ANALYZER_BUILD_ID = "scope-diagnostic-4"
+ANALYZER_BUILD_ID = "scope-diagnostic-5"
 
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
@@ -1289,6 +1289,20 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
 
 class GlobalReadBeforeWriteVisitor(LocalReadBeforeWriteVisitor):
     """Track reads of function-declared globals across reachable control-flow paths."""
+    def visit_Try(self, node):
+        # Re-evaluate the finally suite from the merged incoming state. This
+        # explicitly preserves guaranteed global assignments made by finally,
+        # even when the try and except paths disagree about earlier assignment.
+        super().visit_Try(node)
+        if node.finalbody and not self.terminated:
+            final_state = LocalReadBeforeWriteVisitor(
+                self.local_names, self.assigned, self.shadowed_builtins
+            )
+            final_state.visit_block(node.finalbody)
+            self.assigned = set(final_state.assigned)
+
+    visit_TryStar = visit_Try
+
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
             if node.id in self.local_names and node.id not in self.assigned:

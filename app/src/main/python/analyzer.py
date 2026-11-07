@@ -1030,15 +1030,18 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
     def visit_Match(self, node):
         self.visit(node.subject)
         before = set(self.assigned)
+        before_constants = dict(self.constants)
         continuing_paths = []
+        continuing_constant_paths = []
         has_unconditional_fallback = False
         was_terminated = self.terminated
         all_cases_terminate = True
 
         for case in node.cases:
-            # Each case starts from the state before the match; captures are
-            # assigned only on the path where this pattern succeeds.
+            # Each case starts from the state before the match; captures and
+            # literal facts are valid only on the path where this pattern matches.
             self.assigned = set(before) | pattern_bindings(case.pattern)
+            self.constants = dict(before_constants)
             self.terminated = False
             self.visit(case.pattern)
             if case.guard:
@@ -1047,6 +1050,7 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
 
             if not self.terminated:
                 continuing_paths.append(set(self.assigned))
+                continuing_constant_paths.append(dict(self.constants))
                 all_cases_terminate = False
 
             # An unguarded irrefutable pattern handles every remaining value.
@@ -1054,14 +1058,29 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
                 has_unconditional_fallback = True
                 break
 
-        # Without an exhaustive fallback, no case may match.
+        # Without an exhaustive fallback, no case may match; preserve that
+        # path's original constants as well as its original assigned names.
         if not has_unconditional_fallback:
             continuing_paths.append(before)
+            continuing_constant_paths.append(before_constants)
             all_cases_terminate = False
 
         self.assigned = (
             set.intersection(*continuing_paths) if continuing_paths else before
         )
+        if continuing_constant_paths:
+            first_constants = continuing_constant_paths[0]
+            self.constants = {
+                name: value for name, value in first_constants.items()
+                if all(
+                    name in state
+                    and type(state[name]) is type(value)
+                    and state[name] == value
+                    for state in continuing_constant_paths[1:]
+                )
+            }
+        else:
+            self.constants = dict(before_constants)
         self.terminated = was_terminated or (
             has_unconditional_fallback and all_cases_terminate
         )

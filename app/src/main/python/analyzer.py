@@ -6,7 +6,7 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
-ANALYZER_BUILD_ID = "scope-diagnostic-6"
+ANALYZER_BUILD_ID = "scope-diagnostic-7"
 
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
@@ -1288,11 +1288,11 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
 
 
 def guaranteed_straight_line_global_writes(function_node):
-    """Return global names definitely assigned by a deliberately simple helper.
+    """Return only global writes guaranteed by a simple nested helper.
 
-    Only accept a straight-line body containing global declarations, harmless
-    docstring/pass statements, and assignments from literal values. More
-    complex helpers are left to the conservative unknown-path analysis.
+    In addition to straight-line literal assignments, recognize assignments
+    in a finally suite: Python executes finally on normal return and exception
+    paths alike. Conditional writes count only when every branch assigns.
     """
     collector = LocalBindingCollector()
     for statement in function_node.body:
@@ -1301,36 +1301,51 @@ def guaranteed_straight_line_global_writes(function_node):
     if not declared:
         return set()
 
-    assigned = set()
-    for statement in function_node.body:
-        if isinstance(statement, ast.Global):
-            continue
-        if isinstance(statement, ast.Pass):
-            continue
-        if (isinstance(statement, ast.Expr)
-                and isinstance(statement.value, ast.Constant)
-                and isinstance(statement.value.value, str)):
-            continue
-        if isinstance(statement, ast.Assign):
-            known, _ = literal(statement.value)
-            if not known:
-                return set()
-            targets = statement.targets
-        elif isinstance(statement, ast.AnnAssign):
-            if statement.value is None:
-                return set()
-            known, _ = literal(statement.value)
-            if not known:
-                return set()
-            targets = [statement.target]
-        else:
-            return set()
+    def guaranteed(statements):
+        assigned = set()
+        for statement in statements:
+            if isinstance(statement, (ast.Global, ast.Pass)):
+                continue
+            if (isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Constant)
+                    and isinstance(statement.value.value, str)):
+                continue
+            if isinstance(statement, ast.Assign):
+                known, _ = literal(statement.value)
+                if not known:
+                    return None
+                targets = statement.targets
+            elif isinstance(statement, ast.AnnAssign):
+                if statement.value is None:
+                    return None
+                known, _ = literal(statement.value)
+                if not known:
+                    return None
+                targets = [statement.target]
+            elif isinstance(statement, ast.If):
+                body_writes = guaranteed(statement.body)
+                else_writes = guaranteed(statement.orelse)
+                if body_writes is None or else_writes is None:
+                    return None
+                assigned.update(body_writes & else_writes)
+                continue
+            elif isinstance(statement, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+                # A finally suite runs even when the try body returns or raises.
+                final_writes = guaranteed(statement.finalbody)
+                if final_writes is None:
+                    return None
+                assigned.update(final_writes)
+                continue
+            else:
+                return None
 
-        for target in targets:
-            if isinstance(target, ast.Name) and target.id in declared:
-                assigned.add(target.id)
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id in declared:
+                    assigned.add(target.id)
+        return assigned
 
-    return assigned
+    result = guaranteed(function_node.body)
+    return result if result is not None else set()
 
 
 class GlobalReadBeforeWriteVisitor(LocalReadBeforeWriteVisitor):
@@ -1546,7 +1561,13 @@ class ScopeNameVisitor(ast.NodeVisitor):
             for statement in node.body
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        nested_helper_globals = set().union(*nested_helper_writes.values()) if nested_helper_writes else set()
+        nested_helper_globals = set()
+        for statement in node.body:
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                helper_collector = LocalBindingCollector()
+                for helper_statement in statement.body:
+                    helper_collector.visit(helper_statement)
+                nested_helper_globals.update(helper_collector.globals)
         globals_bound = (collector.names & collector.globals) | nested_helper_globals
         locals_for_function = (collector.names - collector.globals - collector.nonlocals) | parameters
         # A method does not close over the containing class namespace.

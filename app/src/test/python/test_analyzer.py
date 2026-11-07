@@ -945,5 +945,44 @@ def calculate():
     return result"""
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
+
+class GlobalBindingFlowTests(unittest.TestCase):
+    def titles(self, source):
+        return [item["title"] for item in scan(source)["issues"]]
+
+    def test_global_assigned_on_only_one_if_path_is_reported(self):
+        source = """def calculate(flag):
+    global result
+    if flag:
+        result = 100
+    return result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and item["message"].find("المتغير العام 'result'") >= 0
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["line"], 5)
+        self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
+    def test_global_defined_at_module_scope_after_function_is_safe(self):
+        source = """def calculate():
+    global result
+    return result
+
+result = 100"""
+        self.assertNotIn("اسم أو متغير غير معرّف", self.titles(source))
+
+    def test_global_assigned_on_both_if_paths_is_safe(self):
+        source = """def calculate(flag):
+    global result
+    if flag:
+        result = 100
+    else:
+        result = 200
+    return result"""
+        self.assertNotIn("اسم أو متغير غير معرّف", self.titles(source))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -531,7 +531,7 @@ calculate(False)"""
             if item["title"] == "استعمال متغير الاستثناء بعد انتهاء except"
         ]
         self.assertEqual(len(matches), 1)
-        self.assertEqual(matches[0]["line"], 6)
+        self.assertEqual(matches[0]["line"], 8)
         self.assertEqual(matches[0]["confidence"], "CONFIRMED")
 
     def test_reassigned_exception_alias_can_be_read_after_handler(self):

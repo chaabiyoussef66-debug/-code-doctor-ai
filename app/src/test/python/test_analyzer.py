@@ -646,5 +646,34 @@ os.system(command)"""
                       self.taint_titles(source))
 
 
+
+    def test_try_with_guaranteed_invalid_builtin_int_does_not_report_saved_error(self):
+        source = """def calculate():
+    try:
+        int("invalid")
+    except ValueError as error:
+        saved_error = str(error)
+    return saved_error"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_try_with_valid_builtin_int_keeps_normal_path_warning(self):
+        source = """def calculate():
+    try:
+        int("123")
+    except ValueError as error:
+        saved_error = str(error)
+    return saved_error"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_shadowed_local_int_does_not_count_as_guaranteed_builtin_error(self):
+        source = """def calculate():
+    int = lambda value: value
+    try:
+        int("invalid")
+    except ValueError:
+        saved_error = "caught"
+    return saved_error"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
 if __name__ == "__main__":
     unittest.main()

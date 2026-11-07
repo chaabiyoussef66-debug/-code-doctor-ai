@@ -1237,5 +1237,40 @@ result = 100"""
         self.assertEqual(matches[0]["confidence"], "POTENTIAL")
 
 
+    def test_global_assignment_before_later_try_exception_is_preserved_in_handler(self):
+        source = """def calculate(mode):
+    global result
+    try:
+        result = 4100
+        if mode == 1:
+            raise ValueError("Test")
+    except ValueError:
+        print("Handled")
+    return result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "المتغير العام 'result'" in item["message"]
+        ]
+        self.assertEqual(matches, [])
+
+    def test_risky_call_before_assignment_still_keeps_handler_path_unassigned(self):
+        source = """def calculate():
+    global result
+    try:
+        risky_call()
+        result = 10
+    except ValueError:
+        pass
+    return result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "المتغير العام 'result'" in item["message"]
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
+
 if __name__ == "__main__":
     unittest.main()

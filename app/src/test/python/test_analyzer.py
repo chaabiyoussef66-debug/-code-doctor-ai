@@ -711,5 +711,25 @@ def calculate():
     return saved_error"""
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
+
+    def test_non_raising_try_body_does_not_create_unreachable_handler_path(self):
+        source = """def calculate():
+    try:
+        value = 10
+    except ValueError:
+        pass
+    return value"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_potentially_raising_call_keeps_handler_path_in_analysis(self):
+        source = """def calculate():
+    try:
+        risky_call()
+        value = 10
+    except ValueError:
+        pass
+    return value"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
 if __name__ == "__main__":
     unittest.main()

@@ -834,6 +834,26 @@ def calculate():
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
 
+    def test_for_body_constant_does_not_leak_after_possible_empty_loop(self):
+        source = """def calculate(items):
+    flag = False
+    for item in items:
+        flag = True
+    if flag:
+        result = 1
+    return result"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_while_body_constant_does_not_leak_after_possible_zero_iterations(self):
+        source = """def calculate(run):
+    flag = False
+    while run:
+        flag = True
+    if flag:
+        result = 1
+    return result"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
     def test_inner_break_does_not_exit_outer_while(self):
         source = """def calculate(flag):
     while True:

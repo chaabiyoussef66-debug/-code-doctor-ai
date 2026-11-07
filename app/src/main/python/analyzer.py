@@ -6,6 +6,8 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
+ANALYZER_BUILD_ID = "scope-diagnostic-1"
+
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
 def issue(severity, title, node, message, suggestion, confidence="CONFIRMED"):
@@ -1493,7 +1495,7 @@ def analyze(source):
         issues.append(issue("ERROR", "خطأ في صياغة Python", type("N", (), {"lineno": exc.lineno or 1})(),
             exc.msg or "تعذر تحليل الكود.",
             "راجع الأقواس والنقطتين والمسافات قرب السطر المحدد."))
-        return json.dumps({"status": "SYNTAX_ERROR", "issues": issues}, ensure_ascii=False)
+        return json.dumps({"status": "SYNTAX_ERROR", "issues": issues, "analyzer_build_id": ANALYZER_BUILD_ID}, ensure_ascii=False)
 
     inspector = Inspector()
     inspector.visit(tree)
@@ -1533,5 +1535,6 @@ def analyze(source):
     return json.dumps({
         "status": "ISSUES_FOUND" if issues else "NO_RULE_MATCH",
         "issues": issues,
+        "analyzer_build_id": ANALYZER_BUILD_ID,
         "notice": "التحليل ساكن ولا يشغّل الكود. النتائج تعتمد على القواعد الحالية ولا تثبت خلو البرنامج من الأخطاء."
     }, ensure_ascii=False)

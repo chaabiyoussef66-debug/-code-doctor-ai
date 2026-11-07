@@ -6,7 +6,7 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
-ANALYZER_BUILD_ID = "scope-diagnostic-10"
+ANALYZER_BUILD_ID = "scope-diagnostic-11"
 
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
@@ -716,6 +716,9 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         # while continue advances to the next iteration and may later exhaust.
         self.loop_breaks = []
         self.loop_continues = []
+        # Return states are carried through finally suites, including returns
+        # nested inside conditional branches.
+        self.try_return_frames = []
 
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
@@ -789,6 +792,8 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
     def visit_Return(self, node):
         if node.value:
             self.visit(node.value)
+        if self.try_return_frames:
+            self.try_return_frames[-1].append(set(self.assigned))
         self.terminated = True
 
     def known_condition(self, node):
@@ -1162,6 +1167,8 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         was_terminated = self.terminated
         continuing_paths = []
         handler_cleared_paths = []
+        return_frame = []
+        self.try_return_frames.append(return_frame)
 
         # The try body has a normal-completion path and may also raise into
         # any handler. Analyze normal completion separately from handlers.
@@ -1182,14 +1189,12 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         # A handler is reachable only if the try body contains an operation
         # that may raise. Safe literal assignments cannot enter an except path.
         handlers_reachable = self._try_body_may_raise(node.body)
-        # Each reachable except handler is a separate possible path. Preserve
-        # safe literal assignments completed before the first risky statement:
-        # an exception raised later cannot undo those earlier assignments.
+        # Preserve safe literal assignments completed before the first risky
+        # statement: a later exception cannot undo those earlier assignments.
         handler_entry = (
             set(before)
             | self._try_body_guaranteed_prefix_assignments(node.body)
         )
-        # Do not let an alias cleared by one handler leak into another handler.
         for handler in (node.handlers if handlers_reachable else []):
             self.assigned = set(handler_entry)
             self.cleared_exception_names = set(before_cleared)
@@ -1199,12 +1204,15 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
                 continuing_paths.append(set(self.assigned))
                 handler_cleared_paths.append(set(self.cleared_exception_names))
 
+        # Save returns separately: finally executes on those paths too, even
+        # though they do not continue after the try statement.
+        return_paths = list(return_frame)
+        self.try_return_frames.pop()
+
         self.assigned = (
             set.intersection(*continuing_paths) if continuing_paths else before
         )
         if handler_cleared_paths:
-            # A cleared-alias diagnosis is confirmed across multiple handlers
-            # only when every continuing handler clears that same name.
             self.cleared_exception_names = (
                 set.intersection(*handler_cleared_paths)
                 if len(handler_cleared_paths) > 1
@@ -1216,13 +1224,43 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             self.cleared_exception_names = set(before_cleared)
         self.terminated = was_terminated or not continuing_paths
 
-        # Finally runs after both normal and exceptional exits. Preserve an
-        # earlier return unless the finally block itself also terminates.
         if node.finalbody:
+            # Analyze finally against every route that reaches it, including
+            # routes that already executed return inside the try/except.
+            finally_paths = list(continuing_paths) + return_paths
+            finally_entry = (
+                set.intersection(*finally_paths) if finally_paths else set(before)
+            )
+            normal_after = (
+                set.intersection(*continuing_paths)
+                if continuing_paths else set(before)
+            )
             already_terminated = self.terminated
+            self.assigned = set(finally_entry)
             self.terminated = False
             self.visit_block(node.finalbody)
-            self.terminated = self.terminated or already_terminated
+            finally_terminated = self.terminated
+            final_assigned = set(self.assigned)
+
+            # A finally write that is guaranteed across its own branches also
+            # applies to normal paths after the try. Do not let return-only
+            # paths erase assignments from paths that continue after the try.
+            guaranteed_finally_writes = final_assigned - finally_entry
+            if continuing_paths:
+                self.assigned = normal_after | guaranteed_finally_writes
+            else:
+                self.assigned = final_assigned
+
+            # If this try is nested in another try, a return that survives
+            # this finally becomes an exit path for the enclosing finally.
+            if return_paths and not finally_terminated and self.try_return_frames:
+                self.try_return_frames[-1].append(set(final_assigned))
+            self.terminated = finally_terminated or (
+                already_terminated and not continuing_paths
+            )
+        elif return_paths and self.try_return_frames:
+            # No finally here: propagate the pending return states unchanged.
+            self.try_return_frames[-1].extend(return_paths)
 
     visit_TryStar = visit_Try
 

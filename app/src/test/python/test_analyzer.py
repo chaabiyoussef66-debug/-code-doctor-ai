@@ -9,7 +9,7 @@ def scan(source):
 
 class AnalyzerRuntimeErrorTests(unittest.TestCase):
     def test_analyzer_build_fingerprint_is_returned(self):
-        self.assertEqual(scan("value = 1")["analyzer_build_id"], "scope-diagnostic-10")
+        self.assertEqual(scan("value = 1")["analyzer_build_id"], "scope-diagnostic-11")
 
     def titles(self, source):
         return [item["title"] for item in scan(source)["issues"]]
@@ -1270,6 +1270,65 @@ result = 100"""
         ]
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
+
+
+
+class FinallyReturnPathRegressionTests(unittest.TestCase):
+    def matching_local_reads(self, source, name):
+        return [
+            item for item in scan(source)["issues"]
+            if item["title"] == "استعمال متغير محلي قبل التهيئة"
+            and ("'" + name + "'") in item["message"]
+        ]
+
+    def test_finally_reads_local_on_return_path_that_skips_assignment(self):
+        source = """def calculate(mode):
+    try:
+        if mode == 1:
+            value = 100
+        else:
+            return 0
+    finally:
+        print(value)"""
+        matches = self.matching_local_reads(source, "value")
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["line"], 6)
+        self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
+    def test_finally_read_is_safe_when_both_if_paths_assign(self):
+        source = """def calculate(mode):
+    try:
+        if mode == 1:
+            value = 100
+        else:
+            value = 200
+    finally:
+        print(value)"""
+        self.assertEqual(self.matching_local_reads(source, "value"), [])
+
+    def test_finally_assignment_repairs_value_on_pending_return_path(self):
+        source = """def calculate(mode):
+    try:
+        if mode == 1:
+            value = 100
+        else:
+            return 0
+    finally:
+        value = 200
+        print(value)"""
+        self.assertEqual(self.matching_local_reads(source, "value"), [])
+
+    def test_return_only_path_does_not_pollute_code_after_try(self):
+        source = """def calculate(mode):
+    try:
+        if mode:
+            return 0
+        value = 100
+    finally:
+        pass
+    return value"""
+        self.assertEqual(self.matching_local_reads(source, "value"), [])
 
 
 if __name__ == "__main__":

@@ -1038,5 +1038,77 @@ result = 100"""
         self.assertEqual(len(matches), 1)
 
 
+    def test_nested_helper_global_read_before_write_is_potential_not_undefined(self):
+        source = """def calculate(flag):
+    def initialize():
+        global nested_value
+        if flag:
+            return
+        nested_value = 20
+    initialize()
+    return nested_value"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "nested_value" in item["message"]
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
+    def test_nested_helper_finally_assignment_is_guaranteed_after_return(self):
+        source = """def calculate(flag):
+    def initialize():
+        global finally_value
+        try:
+            if flag:
+                return
+        finally:
+            finally_value = 30
+    initialize()
+    return finally_value"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "finally_value" in item["message"]
+        ]
+        self.assertEqual(matches, [])
+
+    def test_nested_helper_finally_assignment_is_guaranteed_after_exception(self):
+        source = """def calculate():
+    def initialize():
+        global exception_value
+        try:
+            raise ValueError("test")
+        finally:
+            exception_value = 40
+    initialize()
+    return exception_value"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "exception_value" in item["message"]
+        ]
+        self.assertEqual(matches, [])
+
+    def test_nested_helper_finally_without_assignment_remains_potential(self):
+        source = """def calculate(flag):
+    def initialize():
+        global missing_value
+        try:
+            if flag:
+                return
+        finally:
+            pass
+    initialize()
+    return missing_value"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "missing_value" in item["message"]
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
+
 if __name__ == "__main__":
     unittest.main()

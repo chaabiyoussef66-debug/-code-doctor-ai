@@ -203,6 +203,29 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
         self.assertTrue(self.has_name_error(source))
 
 
+    def test_match_case_constant_does_not_leak_to_unmatched_path(self):
+        source = """def calculate(choice):
+    flag = False
+    match choice:
+        case 1:
+            flag = True
+    if flag == True:
+        result = 1
+    return result"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_match_constant_shared_by_all_exhaustive_cases_is_preserved(self):
+        source = """def calculate(choice):
+    match choice:
+        case 1:
+            flag = True
+        case _:
+            flag = True
+    if flag:
+        result = 1
+    return result"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
     def test_match_pattern_capture_is_defined_inside_case(self):
         source = 'def get_name(data):\n    match data:\n        case {"name": captured}:\n            return captured'
         self.assertFalse(self.has_name_error(source))

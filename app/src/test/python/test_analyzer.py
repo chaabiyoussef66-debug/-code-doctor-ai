@@ -867,5 +867,40 @@ def calculate():
     return result"""
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
+
+    def test_inner_continue_runs_inner_else_before_outer_break(self):
+        source = """def calculate():
+    for outer in [1]:
+        for inner in [1]:
+            continue
+        else:
+            result = 5
+        break
+    return result"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_outer_continue_after_inner_break_reaches_outer_else(self):
+        source = """def calculate():
+    for outer in [1]:
+        for inner in [1]:
+            break
+        continue
+    else:
+        result = 7
+    return result"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_inner_break_skips_inner_else_but_outer_else_runs(self):
+        source = """def calculate():
+    for outer in [1]:
+        for inner in [1]:
+            break
+        else:
+            result = 1
+    else:
+        result = 2
+    return result"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
 if __name__ == "__main__":
     unittest.main()

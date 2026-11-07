@@ -1109,6 +1109,69 @@ result = 100"""
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["confidence"], "POTENTIAL")
 
+    def test_nested_helper_try_both_if_paths_with_harmless_finally_call_is_safe(self):
+        source = """def calculate(flag):
+    def initialize():
+        global shared_result
+        try:
+            if flag:
+                shared_result = 500
+            else:
+                shared_result = 600
+        finally:
+            print("Initialization finished")
+    initialize()
+    return shared_result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "shared_result" in item["message"]
+        ]
+        self.assertEqual(matches, [])
+
+    def test_nested_helper_try_single_if_path_remains_potential(self):
+        source = """def calculate(flag):
+    def initialize():
+        global shared_result
+        try:
+            if flag:
+                shared_result = 500
+        finally:
+            print("Initialization finished")
+    initialize()
+    return shared_result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "shared_result" in item["message"]
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
+    def test_nested_helper_try_handler_without_write_remains_potential(self):
+        source = """def calculate(flag):
+    def initialize():
+        global shared_result
+        try:
+            if flag:
+                shared_result = 500
+            else:
+                shared_result = 600
+            risky_call()
+        except ValueError:
+            pass
+        finally:
+            print("Initialization finished")
+    initialize()
+    return shared_result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "shared_result" in item["message"]
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["confidence"], "POTENTIAL")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,7 +6,7 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
-ANALYZER_BUILD_ID = "scope-diagnostic-7"
+ANALYZER_BUILD_ID = "scope-diagnostic-8"
 
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
@@ -1307,8 +1307,14 @@ def guaranteed_straight_line_global_writes(function_node):
             if isinstance(statement, (ast.Global, ast.Pass)):
                 continue
             if (isinstance(statement, ast.Expr)
-                    and isinstance(statement.value, ast.Constant)
-                    and isinstance(statement.value.value, str)):
+                    and (
+                        isinstance(statement.value, ast.Constant)
+                        and isinstance(statement.value.value, str)
+                        or isinstance(statement.value, ast.Call)
+                    )):
+                # Expression statements do not directly establish a tracked
+                # global binding. Calls may raise, but a propagating exception
+                # prevents the caller's subsequent read from being reached.
                 continue
             if isinstance(statement, ast.Assign):
                 known, _ = literal(statement.value)
@@ -1330,11 +1336,29 @@ def guaranteed_straight_line_global_writes(function_node):
                 assigned.update(body_writes & else_writes)
                 continue
             elif isinstance(statement, (ast.Try, getattr(ast, "TryStar", ast.Try))):
-                # A finally suite runs even when the try body returns or raises.
+                # A normal path includes the try body followed by its else suite.
+                # Each handler is a separate possible normal-return path; start
+                # handlers conservatively without assuming writes from the body.
+                body_writes = guaranteed(statement.body)
+                else_writes = guaranteed(statement.orelse)
+                if body_writes is None or else_writes is None:
+                    return None
+                path_writes = [body_writes | else_writes]
+                for handler in statement.handlers:
+                    handler_writes = guaranteed(handler.body)
+                    if handler_writes is None:
+                        return None
+                    path_writes.append(handler_writes)
+                guaranteed_try_writes = (
+                    set.intersection(*path_writes) if path_writes else set()
+                )
+
+                # A finally suite runs on every exit path. Its guaranteed
+                # writes add to writes already guaranteed by try/except paths.
                 final_writes = guaranteed(statement.finalbody)
                 if final_writes is None:
                     return None
-                assigned.update(final_writes)
+                assigned.update(guaranteed_try_writes | final_writes)
                 continue
             else:
                 return None

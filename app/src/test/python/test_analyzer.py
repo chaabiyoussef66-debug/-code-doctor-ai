@@ -432,6 +432,27 @@ class AnalyzerRuntimeErrorTests(unittest.TestCase):
     return result"""
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
+    def test_for_continue_assignment_is_preserved_through_else(self):
+        source = """def calculate():
+    for item in [1]:
+        result = 10
+        continue
+    else:
+        pass
+    return result"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_while_continue_state_reaches_loop_else(self):
+        source = """def calculate(flag):
+    if flag:
+        result = 10
+    while flag:
+        continue
+    else:
+        pass
+    return result"""
+        self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
 
     def test_finally_return_makes_following_undefined_name_unreachable(self):
         source = "def calculate(value):\n    try:\n        if value > 0:\n            return value\n    finally:\n        return 100\n    print(result)\n\ncalculate(5)"

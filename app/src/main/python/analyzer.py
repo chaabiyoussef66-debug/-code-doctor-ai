@@ -1137,6 +1137,25 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             return True
         return False
 
+    def _try_body_guaranteed_prefix_assignments(self, statements):
+        """Return safe literal-name assignments completed before the first risky statement."""
+        assigned = set()
+        for statement in statements:
+            if isinstance(statement, ast.Pass):
+                continue
+            if isinstance(statement, ast.Assign):
+                known, _ = literal(statement.value)
+                if known and all(isinstance(target, ast.Name) for target in statement.targets):
+                    assigned.update(target.id for target in statement.targets)
+                    continue
+            if (isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Constant)):
+                continue
+            # Stop at the first statement that may raise or branch. Writes made
+            # before this point are present on every exception path from later code.
+            break
+        return assigned
+
     def visit_Try(self, node):
         before = set(self.assigned)
         before_cleared = set(self.cleared_exception_names)
@@ -1163,10 +1182,16 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         # A handler is reachable only if the try body contains an operation
         # that may raise. Safe literal assignments cannot enter an except path.
         handlers_reachable = self._try_body_may_raise(node.body)
-        # Each reachable except handler is a separate possible path. Do not
-        # let an alias cleared by one handler leak into another handler.
+        # Each reachable except handler is a separate possible path. Preserve
+        # safe literal assignments completed before the first risky statement:
+        # an exception raised later cannot undo those earlier assignments.
+        handler_entry = (
+            set(before)
+            | self._try_body_guaranteed_prefix_assignments(node.body)
+        )
+        # Do not let an alias cleared by one handler leak into another handler.
         for handler in (node.handlers if handlers_reachable else []):
-            self.assigned = set(before)
+            self.assigned = set(handler_entry)
             self.cleared_exception_names = set(before_cleared)
             self.terminated = False
             self.visit_ExceptHandler(handler)

@@ -9,7 +9,7 @@ def scan(source):
 
 class AnalyzerRuntimeErrorTests(unittest.TestCase):
     def test_analyzer_build_fingerprint_is_returned(self):
-        self.assertEqual(scan("value = 1")["analyzer_build_id"], "scope-diagnostic-9")
+        self.assertEqual(scan("value = 1")["analyzer_build_id"], "scope-diagnostic-10")
 
     def titles(self, source):
         return [item["title"] for item in scan(source)["issues"]]

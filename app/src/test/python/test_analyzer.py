@@ -444,11 +444,12 @@ calculate(False)"""
         self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
     def test_unconditional_raise_handler_without_assignment_keeps_unbound_warning(self):
-        source = """def calculate():
+        source = """def calculate(flag):
     try:
         raise ValueError("bad input")
     except ValueError:
-        pass
+        if flag:
+            value = 7
     return value"""
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 

@@ -970,6 +970,15 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.assigned = set.intersection(*exits) if exits else before
         self.terminated = not exits
 
+        # Assignments inside a loop are not guaranteed to run, and their
+        # literal values must not leak into conditions after the loop.
+        modified = LocalBindingCollector()
+        modified.visit(node.target)
+        for statement in node.body + node.orelse:
+            modified.visit(statement)
+        for name in modified.names:
+            self.constants.pop(name, None)
+
     visit_AsyncFor = visit_For
 
     def visit_While(self, node):
@@ -998,6 +1007,14 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
 
         self.assigned = set.intersection(*exits) if exits else before
         self.terminated = not exits
+
+        # A while body may execute zero times; discard literal facts for
+        # names that the body or its else suite can change.
+        modified = LocalBindingCollector()
+        for statement in node.body + node.orelse:
+            modified.visit(statement)
+        for name in modified.names:
+            self.constants.pop(name, None)
 
     @staticmethod
     def is_irrefutable_pattern(pattern):

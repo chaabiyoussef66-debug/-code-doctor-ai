@@ -983,6 +983,26 @@ result = 100"""
     return result"""
         self.assertNotIn("اسم أو متغير غير معرّف", self.titles(source))
 
+    def test_global_finally_assignment_initializes_after_try_and_except_paths(self):
+        source = """def calculate(flag):
+    global result
+    try:
+        if flag:
+            result = 10
+        else:
+            raise ValueError("test")
+    except ValueError:
+        print("error handled")
+    finally:
+        result = 30
+    return result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and item["message"].find("المتغير العام 'result'") >= 0
+        ]
+        self.assertEqual(matches, [])
+
 
 if __name__ == "__main__":
     unittest.main()

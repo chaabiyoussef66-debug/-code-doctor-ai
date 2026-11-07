@@ -833,5 +833,39 @@ def calculate():
     return value"""
         self.assertIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
 
+
+    def test_inner_break_does_not_exit_outer_while(self):
+        source = """def calculate(flag):
+    while True:
+        for item in [1]:
+            break
+        if flag:
+            result = 10
+            break
+        else:
+            result = 20
+            break
+    return result"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_inner_break_still_allows_outer_for_else(self):
+        source = """def calculate():
+    for outer in [1]:
+        for inner in [1]:
+            break
+    else:
+        result = 5
+    return result"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
+    def test_inner_break_does_not_make_outer_infinite_while_exit(self):
+        source = """def calculate():
+    while True:
+        for item in [1]:
+            break
+    result = 10
+    return result"""
+        self.assertNotIn("استعمال متغير محلي قبل التهيئة", self.titles(source))
+
 if __name__ == "__main__":
     unittest.main()

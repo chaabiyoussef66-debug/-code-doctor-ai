@@ -6,7 +6,7 @@ import re
 
 from taint_analysis import analyze_tainted_flows
 
-ANALYZER_BUILD_ID = "scope-diagnostic-5"
+ANALYZER_BUILD_ID = "scope-diagnostic-6"
 
 SECRET = re.compile(r"""(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*['"][^'"]{8,}['"]""")
 
@@ -1287,8 +1287,69 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.issues.extend(child.issues)
 
 
+def guaranteed_straight_line_global_writes(function_node):
+    """Return global names definitely assigned by a deliberately simple helper.
+
+    Only accept a straight-line body containing global declarations, harmless
+    docstring/pass statements, and assignments from literal values. More
+    complex helpers are left to the conservative unknown-path analysis.
+    """
+    collector = LocalBindingCollector()
+    for statement in function_node.body:
+        collector.visit(statement)
+    declared = set(collector.globals)
+    if not declared:
+        return set()
+
+    assigned = set()
+    for statement in function_node.body:
+        if isinstance(statement, ast.Global):
+            continue
+        if isinstance(statement, ast.Pass):
+            continue
+        if (isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)):
+            continue
+        if isinstance(statement, ast.Assign):
+            known, _ = literal(statement.value)
+            if not known:
+                return set()
+            targets = statement.targets
+        elif isinstance(statement, ast.AnnAssign):
+            if statement.value is None:
+                return set()
+            known, _ = literal(statement.value)
+            if not known:
+                return set()
+            targets = [statement.target]
+        else:
+            return set()
+
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id in declared:
+                assigned.add(target.id)
+
+    return assigned
+
+
 class GlobalReadBeforeWriteVisitor(LocalReadBeforeWriteVisitor):
     """Track reads of function-declared globals across reachable control-flow paths."""
+    def visit_FunctionDef(self, node):
+        self.helper_global_writes = getattr(self, "helper_global_writes", {})
+        self.helper_global_writes[node.name] = guaranteed_straight_line_global_writes(node)
+        super().visit_FunctionDef(node)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_Expr(self, node):
+        self.visit(node.value)
+        value = node.value
+        if (isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id in getattr(self, "helper_global_writes", {})):
+            self.assigned.update(self.helper_global_writes[value.func.id])
+
     def visit_Try(self, node):
         # Re-evaluate the finally suite from the merged incoming state. This
         # explicitly preserves guaranteed global assignments made by finally,
@@ -1480,7 +1541,13 @@ class ScopeNameVisitor(ast.NodeVisitor):
         for statement in node.body:
             collector.visit(statement)
         parameters = self.parameters(node.args)
-        globals_bound = collector.names & collector.globals
+        nested_helper_writes = {
+            statement.name: guaranteed_straight_line_global_writes(statement)
+            for statement in node.body
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        nested_helper_globals = set().union(*nested_helper_writes.values()) if nested_helper_writes else set()
+        globals_bound = (collector.names & collector.globals) | nested_helper_globals
         locals_for_function = (collector.names - collector.globals - collector.nonlocals) | parameters
         # A method does not close over the containing class namespace.
         enclosing_locals = set() if self.scope_kind == "class" else self.local_names

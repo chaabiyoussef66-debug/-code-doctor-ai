@@ -1004,5 +1004,39 @@ result = 100"""
         self.assertEqual(matches, [])
 
 
+    def test_nested_helper_global_write_is_available_after_unconditional_call(self):
+        source = """def calculate():
+    global shared_result
+
+    def initialize():
+        global shared_result
+        shared_result = 50
+
+    initialize()
+    return shared_result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "shared_result" in item["message"]
+        ]
+        self.assertEqual(matches, [])
+
+    def test_nested_helper_global_write_is_not_assumed_when_not_called(self):
+        source = """def calculate():
+    global shared_result
+
+    def initialize():
+        global shared_result
+        shared_result = 50
+
+    return shared_result"""
+        matches = [
+            item for item in scan(source)["issues"]
+            if item["title"] == "اسم أو متغير غير معرّف"
+            and "shared_result" in item["message"]
+        ]
+        self.assertEqual(len(matches), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

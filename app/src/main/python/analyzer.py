@@ -700,8 +700,9 @@ class LocalBindingCollector(ast.NodeVisitor):
 
 class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
     """Detect local reads that occur before a guaranteed local assignment."""
-    def __init__(self, local_names, parameters):
+    def __init__(self, local_names, parameters, shadowed_builtins=None):
         self.local_names = set(local_names)
+        self.shadowed_builtins = set(shadowed_builtins or ())
         self.assigned = set(parameters)
         self.issues = []
         self.terminated = False
@@ -1034,6 +1035,31 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
 
     visit_AsyncWith = visit_With
 
+    def _try_body_guarantees_builtin_int_value_error(self, statements):
+        """Recognize only a direct, unshadowed int(<invalid string literal>) call."""
+        if len(statements) != 1 or not isinstance(statements[0], ast.Expr):
+            return False
+        call = statements[0].value
+        if not (
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id == "int"
+            and len(call.args) == 1
+            and not call.keywords
+            and isinstance(call.args[0], ast.Constant)
+            and isinstance(call.args[0].value, str)
+            and "int" not in self.local_names
+            and "int" not in self.shadowed_builtins
+        ):
+            return False
+        try:
+            int(call.args[0].value)
+        except ValueError:
+            return True
+        except (TypeError, OverflowError):
+            return False
+        return False
+
     def visit_Try(self, node):
         before = set(self.assigned)
         before_cleared = set(self.cleared_exception_names)
@@ -1047,7 +1073,10 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
         self.cleared_exception_names = set(before_cleared)
         self.terminated = False
         self.visit_block(node.body)
-        body_terminated = self.terminated
+        body_terminated = (
+            self.terminated
+            or self._try_body_guarantees_builtin_int_value_error(node.body)
+        )
 
         if not body_terminated:
             self.visit_block(node.orelse)
@@ -1162,7 +1191,9 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
             return
         # The first iterable is evaluated in the containing function.
         self.visit(node.generators[0].iter)
-        child = LocalReadBeforeWriteVisitor(self.local_names, self.assigned)
+        child = LocalReadBeforeWriteVisitor(
+            self.local_names, self.assigned, self.shadowed_builtins
+        )
         for index, generator in enumerate(node.generators):
             if index:
                 child.visit(generator.iter)
@@ -1178,8 +1209,9 @@ class LocalReadBeforeWriteVisitor(ast.NodeVisitor):
 
 class ScopeNameVisitor(ast.NodeVisitor):
     """Conservative undefined-name checks respecting Python lexical scopes."""
-    def __init__(self, available, local_names=None, closure_names=None, scope_kind="module"):
+    def __init__(self, available, local_names=None, closure_names=None, scope_kind="module", shadowed_builtins=None):
         self.available = set(available)
+        self.shadowed_builtins = set(shadowed_builtins or ())
         self.local_names = set(local_names or ())
         self.closure_names = set(closure_names or ())
         self.scope_kind = scope_kind
@@ -1347,12 +1379,15 @@ class ScopeNameVisitor(ast.NodeVisitor):
             self.available | globals_bound,
             locals_for_function,
             self.closure_names | enclosing_locals,
-            "function"
+            "function",
+            self.shadowed_builtins
         )
         child.visit_block(node.body)
         self.issues.extend(child.issues)
 
-        local_checker = LocalReadBeforeWriteVisitor(locals_for_function, parameters)
+        local_checker = LocalReadBeforeWriteVisitor(
+            locals_for_function, parameters, self.shadowed_builtins
+        )
         local_checker.visit_block(node.body)
         self.issues.extend(local_checker.issues)
 
@@ -1367,7 +1402,8 @@ class ScopeNameVisitor(ast.NodeVisitor):
             self.available,
             self.parameters(node.args),
             self.closure_names | enclosing_locals,
-            "function"
+            "function",
+            self.shadowed_builtins
         )
         child.visit(node.body)
         self.issues.extend(child.issues)
@@ -1386,12 +1422,15 @@ class ScopeNameVisitor(ast.NodeVisitor):
             self.available | (collector.names & collector.globals),
             class_locals,
             self.closure_names | enclosing_locals,
-            "class"
+            "class",
+            self.shadowed_builtins
         )
         child.visit_block(node.body)
         self.issues.extend(child.issues)
 
-        class_checker = LocalReadBeforeWriteVisitor(class_locals, set(dir(builtins)))
+        class_checker = LocalReadBeforeWriteVisitor(
+            class_locals, set(dir(builtins)), self.shadowed_builtins
+        )
         for statement in node.body:
             class_checker.visit(statement)
         self.issues.extend(class_checker.issues)
@@ -1406,7 +1445,8 @@ class ScopeNameVisitor(ast.NodeVisitor):
             self.available,
             set(),
             self.closure_names | enclosing_locals,
-            "comprehension"
+            "comprehension",
+            self.shadowed_builtins
         )
         # Each target becomes visible only after its own iterable is evaluated.
         for index, generator in enumerate(node.generators):
@@ -1468,11 +1508,17 @@ def analyze(source):
     module_collector = LocalBindingCollector()
     module_collector.visit(tree)
     module_names = module_collector.names | set(dir(builtins))
-    name_checker = ScopeNameVisitor(module_names, module_collector.names)
+    shadowed_builtins = module_collector.names & set(dir(builtins))
+    name_checker = ScopeNameVisitor(
+        module_names, module_collector.names,
+        shadowed_builtins=shadowed_builtins
+    )
     name_checker.visit(tree)
     issues.extend(name_checker.issues)
 
-    module_checker = LocalReadBeforeWriteVisitor(module_collector.names, set(dir(builtins)))
+    module_checker = LocalReadBeforeWriteVisitor(
+        module_collector.names, set(dir(builtins)), shadowed_builtins
+    )
     for statement in tree.body:
         module_checker.visit(statement)
     issues.extend(module_checker.issues)

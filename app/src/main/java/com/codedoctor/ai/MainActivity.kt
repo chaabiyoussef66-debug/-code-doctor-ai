@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var output: TextView
     private lateinit var copyButton: Button
     private lateinit var exportButton: Button
+    private lateinit var reportScroll: ScrollView
 
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -138,8 +139,30 @@ class MainActivity : ComponentActivity() {
             setPadding(10, 14, 10, 14)
             textDirection = View.TEXT_DIRECTION_RTL
         }
-        page.addView(ScrollView(this).apply { addView(output) },
+        reportScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(output)
+        }
+        page.addView(reportScroll,
             LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = 8 })
+
+        val scrollActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        scrollActions.addView(Button(this@MainActivity).apply {
+            text = "↑ أعلى التقرير"
+            setOnClickListener { reportScroll.smoothScrollTo(0, 0) }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        scrollActions.addView(Button(this@MainActivity).apply {
+            text = "↓ أسفل التقرير"
+            setOnClickListener {
+                reportScroll.post {
+                    reportScroll.smoothScrollTo(0, reportScroll.getChildAt(0).height)
+                }
+            }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        page.addView(scrollActions, wrap())
 
         val reportActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -253,6 +276,7 @@ class MainActivity : ComponentActivity() {
             val notice = data.optString("notice")
             if (notice.isNotBlank()) report.append("تنبيه: ").append(notice)
             output.text = report.toString()
+            reportScroll.post { reportScroll.scrollTo(0, 0) }
             copyButton.isEnabled = true
             exportButton.isEnabled = true
             saveHistory(source, report.toString())
@@ -343,6 +367,7 @@ class MainActivity : ComponentActivity() {
                     val selected = items.getJSONObject(which)
                     editor.setText(selected.optString("source"))
                     output.text = selected.optString("report")
+                    reportScroll.post { reportScroll.scrollTo(0, 0) }
                     copyButton.isEnabled = true
                     exportButton.isEnabled = true
                 }

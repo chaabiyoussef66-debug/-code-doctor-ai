@@ -736,6 +736,68 @@ os.system(command)"""
                       self.taint_titles(source))
 
 
+    def test_tainted_argument_reaches_sink_inside_helper(self):
+        source = """def execute_query(query):
+    cursor.execute(query)
+
+execute_query(request.args.get("id"))"""
+        self.assertIn("مدخلات غير موثوقة تصل إلى استعلام SQL",
+                      self.taint_titles(source))
+
+    def test_tainted_keyword_argument_reaches_sink_inside_helper(self):
+        source = """def run_code(payload):
+    exec(payload)
+
+run_code(payload=input())"""
+        self.assertIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                      self.taint_titles(source))
+
+    def test_clean_argument_does_not_taint_helper_parameter(self):
+        source = """def run_code(payload):
+    eval(payload)
+
+run_code("1 + 1")"""
+        self.assertNotIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                         self.taint_titles(source))
+
+    def test_list_append_propagates_taint_to_subscript(self):
+        source = """items = []
+items.append(input())
+eval(items[0])"""
+        self.assertIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                      self.taint_titles(source))
+
+    def test_dict_subscript_assignment_propagates_taint(self):
+        source = """data = {}
+data["query"] = request.args.get("q")
+cursor.execute(data["query"])"""
+        self.assertIn("مدخلات غير موثوقة تصل إلى استعلام SQL",
+                      self.taint_titles(source))
+
+    def test_dict_update_propagates_taint(self):
+        source = """data = {}
+data.update({"code": input()})
+exec(data["code"])"""
+        self.assertIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                      self.taint_titles(source))
+
+    def test_static_container_value_is_not_tainted(self):
+        source = """items = []
+items.append("safe")
+eval(items[0])"""
+        self.assertNotIn("مدخلات غير موثوقة تصل إلى تنفيذ Python ديناميكي",
+                         self.taint_titles(source))
+
+    def test_helper_call_inside_branch_keeps_function_summary(self):
+        source = """def execute_query(query):
+    cursor.execute(query)
+
+if enabled:
+    execute_query(input())"""
+        self.assertIn("مدخلات غير موثوقة تصل إلى استعلام SQL",
+                      self.taint_titles(source))
+
+
 
     def test_try_with_guaranteed_invalid_builtin_int_does_not_report_saved_error(self):
         source = """def calculate():

@@ -50,12 +50,21 @@ def _target_names(target):
     return set()
 
 
+def _root_name(node):
+    """Return the base variable for a name, attribute or subscript target."""
+    while isinstance(node, (ast.Attribute, ast.Subscript)):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else None
+
+
 class TaintFlowVisitor(ast.NodeVisitor):
     """Track may-be-tainted names in one lexical scope, without crossing functions."""
 
-    def __init__(self, tainted=None):
+    def __init__(self, tainted=None, functions=None, active_functions=None):
         self.tainted = set(tainted or ())
         self.issues = []
+        self.functions = functions if functions is not None else {}
+        self.active_functions = set(active_functions or ())
 
     def is_tainted(self, node):
         if node is None:
@@ -149,8 +158,68 @@ class TaintFlowVisitor(ast.NodeVisitor):
                     "استعمل معاملات SQL المعلّمة placeholders ولا تدمج القيم داخل نص الاستعلام."
                 )
 
+    def _analyze_function_call(self, node):
+        """Analyze a known helper body with only its tainted parameters seeded."""
+        if not isinstance(node.func, ast.Name):
+            return
+        name = node.func.id
+        function = self.functions.get(name)
+        if function is None or name in self.active_functions:
+            return
+
+        positional = (
+            function.args.posonlyargs
+            + function.args.args
+        )
+        keyword_only = function.args.kwonlyargs
+        parameter_names = {arg.arg for arg in positional + keyword_only}
+        if function.args.vararg:
+            parameter_names.add(function.args.vararg.arg)
+        if function.args.kwarg:
+            parameter_names.add(function.args.kwarg.arg)
+
+        seeded = set()
+        for parameter, value in zip(positional, node.args):
+            if self.is_tainted(value):
+                seeded.add(parameter.arg)
+        for keyword in node.keywords:
+            if keyword.arg and keyword.arg in parameter_names and self.is_tainted(keyword.value):
+                seeded.add(keyword.arg)
+
+        # Conservatively map expanded positional/keyword arguments to variadics.
+        if function.args.vararg and len(node.args) > len(positional):
+            if any(self.is_tainted(value) for value in node.args[len(positional):]):
+                seeded.add(function.args.vararg.arg)
+        if function.args.kwarg and any(
+            item.arg is None and self.is_tainted(item.value) for item in node.keywords
+        ):
+            seeded.add(function.args.kwarg.arg)
+
+        if not seeded:
+            return
+        child = TaintFlowVisitor(
+            seeded,
+            functions=self.functions,
+            active_functions=self.active_functions | {name},
+        )
+        for statement in function.body:
+            child.visit(statement)
+        self.issues.extend(child.issues)
+
     def visit_Call(self, node):
         self._check_sink(node)
+
+        # Track tainted values inserted into mutable containers.
+        if isinstance(node.func, ast.Attribute):
+            method = node.func.attr
+            if method in {"append", "extend", "insert", "update", "setdefault", "add"}:
+                values = list(node.args) + [item.value for item in node.keywords]
+                if any(self.is_tainted(value) for value in values):
+                    container = _root_name(node.func.value)
+                    if container:
+                        self.tainted.add(container)
+
+        self._analyze_function_call(node)
         self.generic_visit(node)
 
     def visit_Assign(self, node):
@@ -160,6 +229,10 @@ class TaintFlowVisitor(ast.NodeVisitor):
             names = _target_names(target)
             if tainted:
                 self.tainted.update(names)
+                if isinstance(target, ast.Subscript):
+                    container = _root_name(target.value)
+                    if container:
+                        self.tainted.add(container)
             else:
                 self.tainted.difference_update(names)
             self.visit(target)
@@ -231,7 +304,10 @@ class TaintFlowVisitor(ast.NodeVisitor):
         for item in node.args.defaults + node.args.kw_defaults:
             if item is not None:
                 self.visit(item)
-        child = TaintFlowVisitor()
+        child = TaintFlowVisitor(
+            functions=self.functions,
+            active_functions=self.active_functions | {node.name},
+        )
         for statement in node.body:
             child.visit(statement)
         self.issues.extend(child.issues)
@@ -246,7 +322,10 @@ class TaintFlowVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node):
         for item in node.decorator_list + node.bases:
             self.visit(item)
-        child = TaintFlowVisitor()
+        child = TaintFlowVisitor(
+            functions=self.functions,
+            active_functions=self.active_functions,
+        )
         for statement in node.body:
             child.visit(statement)
         self.issues.extend(child.issues)

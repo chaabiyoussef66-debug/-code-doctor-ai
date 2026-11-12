@@ -268,7 +268,11 @@ class TaintFlowVisitor(ast.NodeVisitor):
             self.tainted.difference_update(names)
 
     def _branch(self, statements, initial):
-        child = TaintFlowVisitor(initial)
+        child = TaintFlowVisitor(
+            initial,
+            functions=self.functions,
+            active_functions=self.active_functions,
+        )
         for statement in statements:
             child.visit(statement)
         self.issues.extend(child.issues)
@@ -298,6 +302,7 @@ class TaintFlowVisitor(ast.NodeVisitor):
         self.tainted = before | body_state | else_state
 
     def visit_FunctionDef(self, node):
+        self.functions[node.name] = node
         # Defaults/decorators execute in the enclosing scope; the body has its own locals.
         for item in node.decorator_list:
             self.visit(item)

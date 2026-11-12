@@ -20,6 +20,7 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private lateinit var editor: EditText
+    private lateinit var editorScroll: ScrollView
     private lateinit var output: TextView
     private lateinit var copyButton: Button
     private lateinit var exportButton: Button
@@ -94,16 +95,38 @@ class MainActivity : ComponentActivity() {
             hint = "الصق كود Python هنا..."
             gravity = Gravity.TOP or Gravity.START
             minLines = 9
-            maxLines = 16
+            maxLines = Int.MAX_VALUE
             setSingleLine(false)
             textSize = 14f
             typeface = android.graphics.Typeface.MONOSPACE
             textDirection = View.TEXT_DIRECTION_LTR
             setText("def calculate(a, b):\n    return a / 0\n")
         }
-        page.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f).apply {
-            topMargin = 8; bottomMargin = 8
+        editorScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(editor, ViewGroup.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        page.addView(editorScroll, LinearLayout.LayoutParams(-1, 0, 1f).apply {
+            topMargin = 8; bottomMargin = 4
         })
+
+        val editorScrollActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        editorScrollActions.addView(Button(this@MainActivity).apply {
+            text = "↑ أعلى الكود"
+            setOnClickListener { editorScroll.smoothScrollTo(0, 0) }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        editorScrollActions.addView(Button(this@MainActivity).apply {
+            text = "↓ أسفل الكود"
+            setOnClickListener {
+                editorScroll.post {
+                    editorScroll.smoothScrollTo(0, editorScroll.getChildAt(0).height)
+                }
+            }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        page.addView(editorScrollActions, wrap())
 
         val editorActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
